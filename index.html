@@ -1,0 +1,3466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Idea Sculpture</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181b22; --panel-2:#1f232c; --line:#2a2f3a;
+    --text:#e8eaf0; --muted:#9aa3b2; --accent:#6c8cff; --accent-2:#7af0c0;
+    --node:#222838; --danger:#ff6b6b;
+    --serif:Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+  #app{position:fixed;inset:0}
+  #canvas{position:absolute;inset:0;cursor:grab}
+  #canvas.panning{cursor:grabbing}
+  svg#edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  @keyframes antMarch{to{stroke-dashoffset:-28}}
+  svg#edges path.edge-hit{pointer-events:stroke}
+  #world{position:absolute;left:0;top:0;transform-origin:0 0}
+
+  .node{position:absolute;min-width:96px;max-width:230px;padding:11px 14px;border-radius:14px;
+    background:var(--node);border:1.5px solid #313a4f;color:var(--text);
+    font-size:14px;line-height:1.35;box-shadow:0 6px 20px rgba(0,0,0,.35);
+    cursor:grab;user-select:none;transition:border-color .12s,box-shadow .12s;word-wrap:break-word}
+  .node.root{background:linear-gradient(135deg,#2b3a6b,#3a2b6b);border-color:#6c8cff;font-weight:600}
+  .node.has-para{border-color:#5a6b8f}
+  .node.selected{border-color:#fff;border-width:2.5px;box-shadow:0 0 0 3px #fff,0 0 0 7px rgba(255,255,255,.15),0 8px 24px rgba(0,0,0,.5)}
+  .node.dragging{cursor:grabbing;z-index:50}
+  .node .port{position:absolute;width:14px;height:14px;border-radius:50%;background:var(--accent);
+    border:2px solid #0f1115;right:-7px;top:calc(50% - 7px);cursor:crosshair;opacity:0;transition:opacity .12s}
+  .node:hover .port{opacity:1}
+  .node[contenteditable="true"]{cursor:text;outline:none;border-color:var(--accent-2)}
+  .node .para-dot{position:absolute;top:-7px;right:-7px;width:16px;height:16px;border-radius:50%;
+    background:var(--accent-2);color:#0b1020;font-size:10px;font-weight:800;display:none;align-items:center;justify-content:center;font-family:var(--serif)}
+  .node.has-para .para-dot{display:flex}
+  .node .badge{position:absolute;top:-9px;left:-9px;width:20px;height:20px;border-radius:50%;
+    background:var(--accent);color:#0f1115;font-size:11px;font-weight:700;display:none;align-items:center;justify-content:center}
+  .node.busy .badge{display:flex;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  #toolbar{position:absolute;top:14px;left:14px;display:flex;gap:8px;align-items:center;
+    background:var(--panel);padding:8px;border-radius:12px;border:1px solid var(--line);z-index:100;flex-wrap:wrap;max-width:calc(100% - 28px)}
+  .btn{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:9px;
+    padding:8px 12px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#0b1020;font-weight:600}
+  .btn.ai{background:linear-gradient(135deg,#6c8cff,#7af0c0);color:#0b1020;font-weight:700;border:none}
+  .btn.compile{background:linear-gradient(135deg,#ffb86c,#ff7eb6);color:#0b1020;font-weight:700;border:none}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .sep{width:1px;height:24px;background:var(--line);margin:0 2px}
+  #projName{font-family:var(--serif);font-weight:600;font-size:15px;padding:0 6px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #selInfo{color:var(--muted);font-size:12px;padding:0 4px}
+  .hint{position:absolute;bottom:14px;left:14px;color:var(--muted);font-size:12px;z-index:100;
+    background:var(--panel);padding:8px 12px;border-radius:10px;border:1px solid var(--line);max-width:380px;line-height:1.5}
+  kbd{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px}
+  .zoom{position:absolute;bottom:14px;right:14px;display:flex;gap:6px;z-index:100}
+  .zoom .btn{padding:8px 11px}
+  a{color:var(--accent)}
+
+  /* Home / project picker */
+  #home{position:fixed;inset:0;z-index:300;background:radial-gradient(1200px 600px at 50% -10%,#1a2030,#0f1115);overflow:auto;display:none}
+  #home.open{display:block}
+  .home-wrap{max-width:1000px;margin:0 auto;padding:56px 28px 80px}
+  .home-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+  .home-title{font-family:var(--serif);font-size:34px;font-weight:700;letter-spacing:.01em}
+  .home-sub{color:var(--muted);font-size:14px;margin:6px 0 30px;max-width:560px;line-height:1.6}
+  .proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+  .proj-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;cursor:pointer;
+    transition:border-color .12s,transform .08s;display:flex;flex-direction:column;min-height:150px}
+  .proj-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .proj-card h3{margin:0 0 6px;font-family:var(--serif);font-size:19px;font-weight:600}
+  .proj-card .brief{color:var(--muted);font-size:13px;line-height:1.5;flex:1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
+  .proj-card .meta{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-size:12px;color:var(--muted)}
+  .proj-card .acts{display:flex;gap:10px}
+  .proj-card .acts .mini{font-size:11px}
+  .proj-card.new{align-items:center;justify-content:center;border-style:dashed;color:var(--muted);text-align:center}
+  .proj-card.new .plus{font-size:34px;line-height:1;margin-bottom:8px;color:var(--accent)}
+  .mini{background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;letter-spacing:.06em;padding:0;font-weight:700}
+  .mini:hover{text-decoration:underline}
+  .mini.danger{color:var(--danger)}
+  .mini:disabled{opacity:.5;cursor:wait}
+
+  /* Modal shell */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:400;padding:24px}
+  .overlay.open{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:min(720px,96vw);max-height:90vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+  .modal-pad{padding:24px 26px}
+  .modal h2{margin:0;font-size:18px}
+  .modal .sub{color:var(--muted);font-size:13px;margin:4px 0 0;line-height:1.5}
+  .modal label{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px;letter-spacing:.04em}
+  .modal input[type=text],.modal input[type=password],.modal select,.modal textarea{
+    width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 12px;font-size:14px;font-family:inherit}
+  .modal textarea{resize:vertical;min-height:64px;line-height:1.5}
+  .modal .row{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap}
+  .modal .row.spread{justify-content:space-between;align-items:center}
+
+  .titlebar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px}
+  .node-title{width:100%;background:transparent;border:none;border-bottom:1px dashed transparent;color:var(--text);
+    font-family:var(--serif);font-size:24px;font-weight:600;padding:2px 0}
+  .node-title:focus{outline:none;border-bottom-color:var(--accent-2)}
+  .step{padding:20px 0;border-bottom:1px solid var(--line)}
+  .step-head{display:flex;align-items:baseline;gap:10px}
+  .step-num{font-size:11px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+  .step-name{font-size:11px;letter-spacing:.14em;color:var(--accent-2);font-weight:700}
+  .step-q{font-family:var(--serif);font-size:17px;margin:8px 0 12px;color:var(--text)}
+  .sugg-label{font-size:10px;letter-spacing:.14em;color:var(--muted);font-weight:700;margin:14px 0 8px;display:flex;align-items:center;gap:8px}
+  .sugg-list{display:flex;flex-direction:column;gap:8px;min-height:6px}
+  .sugg{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-size:13px;cursor:pointer;transition:border-color .12s,background .12s}
+  .sugg:hover{border-color:var(--accent-2);background:#262c38}
+  .para-box{margin-top:6px}
+  .para-result{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:14px;font-family:var(--serif);font-size:15px;line-height:1.6;min-height:60px;white-space:pre-wrap}
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--muted);border-top-color:var(--accent-2);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
+  .q-block{margin:14px 0}
+  .q-block .q{font-family:var(--serif);font-size:15px;margin-bottom:6px}
+  .filetag{font-size:11px;color:var(--muted);letter-spacing:.06em}
+  .footer-note{color:var(--muted);font-size:12px;font-style:italic}
+
+  /* Hover paragraph tooltip */
+  #para-tooltip{
+    position:fixed;z-index:500;
+    width:320px;max-height:80vh;overflow-y:auto;
+    pointer-events:auto;
+    left:14px;
+    top:50%;transform:translateY(-50%);
+    background:var(--panel);border:1px solid #46506b;border-radius:14px;
+    padding:16px 18px;font-family:var(--serif);font-size:13px;line-height:1.7;
+    color:var(--text);box-shadow:0 12px 40px rgba(0,0,0,.6);
+    opacity:0;transition:opacity .12s;
+  }
+  #para-tooltip.visible{opacity:1}
+
+  /* Sculpt modal — two-column */
+  .sculpt-body{display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:0;flex:1}
+  .sculpt-left{padding:0 20px 0 0;border-right:1px solid var(--line);overflow-y:auto;min-height:0}
+  .sculpt-right{padding:0 0 0 20px;display:flex;flex-direction:column;min-height:0}
+  .sculpt-right .para-label{font-size:11px;letter-spacing:.12em;color:var(--muted);font-weight:700;margin-bottom:10px}
+  .sculpt-right .para-result{flex:1;overflow-y:auto;font-family:var(--serif);font-size:14px;line-height:1.6;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:80px;transition:border-color .12s}
+  .sculpt-right .para-result:focus{border-color:var(--accent-2)}
+  .sculpt-right textarea#scParaEdit{flex:1;font-family:var(--serif);font-size:14px;line-height:1.6;min-height:0;resize:none}
+  /* chat node */
+  .chat-top{display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap;flex-shrink:0}
+  .chat-ctx-toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
+  .chat-ctx-toggle input{accent-color:var(--accent);cursor:pointer}
+  .chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding:8px 6px;min-height:0;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:12px}
+  .chat-msg{max-width:82%;padding:11px 15px;border-radius:16px;font-size:14.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+  .chat-msg.user{align-self:flex-end;background:var(--accent);color:#0b1020;border-bottom-right-radius:4px}
+  .chat-msg.assistant{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px;font-family:var(--serif)}
+  .chat-msg .role-tag{display:block;font-size:9.5px;letter-spacing:.12em;opacity:.55;margin-bottom:5px;text-transform:uppercase}
+  .chat-empty{margin:auto;color:var(--muted);font-size:13px;text-align:center;max-width:360px;line-height:1.7;font-family:var(--serif)}
+  .chat-input-row{display:flex;gap:10px;align-items:flex-end;margin-top:12px;flex-shrink:0}
+  .chat-input-row textarea{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;color:var(--text);
+    font-size:14px;padding:12px 14px;resize:none;min-height:52px;max-height:170px;line-height:1.5;font-family:inherit;outline:none}
+  .chat-input-row textarea:focus{border-color:var(--accent-2)}
+  .chat-input-row .btn.ai{align-self:stretch;padding:0 22px}
+  .chat-input-row .btn.ai.stopping{background:var(--danger);border-color:var(--danger);color:#fff;background-image:none}
+  .sculpt-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap;align-items:center}
+  .sculpt-actions-left{font-size:12px}
+  .step{padding:16px 0;border-bottom:1px solid var(--line)}
+  .step:first-child{padding-top:0}
+  .step:last-child{border-bottom:none}
+  .step textarea{min-height:52px}
+
+  /* Word count slider */
+  .wc-row{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .wc-row label{font-size:11px;letter-spacing:.12em;color:var(--muted);font-weight:700;white-space:nowrap}
+  .wc-row input[type=range]{flex:1;accent-color:var(--accent-2);cursor:pointer}
+  .wc-val{font-size:12px;color:var(--accent-2);font-weight:700;min-width:48px;text-align:right}
+
+  /* Keyword highlights */
+  .para-result mark,.para-result .kw{background:none;font-weight:700;font-style:normal}
+  .para-result mark.img{color:#f9c74f}
+  .para-result mark.turn{color:var(--accent-2)}
+  #para-tooltip mark{background:none;font-weight:700}
+  #para-tooltip mark.img{color:#f9c74f}
+  #para-tooltip mark.turn{color:var(--accent-2)}
+  .para-result p{margin:0 0 1em 0}
+  .para-result p:last-child{margin-bottom:0}
+  #para-tooltip p{margin:0 0 .9em 0}
+  #para-tooltip p:last-child{margin-bottom:0}
+
+  /* Context panel */
+  #ctxPanel{position:fixed;top:0;right:-420px;width:400px;height:100%;z-index:200;
+    background:var(--panel);border-left:1px solid var(--line);
+    display:flex;flex-direction:column;transition:right .22s cubic-bezier(.4,0,.2,1);
+    box-shadow:-8px 0 32px rgba(0,0,0,.4)}
+  #ctxPanel.open{right:0}
+  #ctxPanel .ctx-head{padding:18px 18px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0}
+  #ctxPanel .ctx-head h3{margin:0;font-size:15px;font-family:var(--serif)}
+  #ctxPanel .ctx-body{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+  #ctxPanel .ctx-footer{padding:14px 18px;border-top:1px solid var(--line);flex-shrink:0}
+
+  /* mode toggle */
+  .mode-toggle{display:flex;gap:6px}
+  .mode-btn{flex:1;padding:7px 4px;font-size:12px;font-weight:600;letter-spacing:.04em;border-radius:8px;
+    border:1.5px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;text-align:center;transition:all .12s}
+  .mode-btn.active{border-color:var(--accent-2);color:var(--accent-2);background:#1a2a28}
+  .mode-btn.active.off{border-color:var(--danger);color:var(--danger);background:#2a1a1a}
+
+  /* token bar */
+  .tok-bar-wrap{background:var(--panel-2);border-radius:8px;height:8px;overflow:hidden;margin-top:6px}
+  .tok-bar{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--accent-2),var(--accent));transition:width .3s}
+  .tok-bar.warn{background:linear-gradient(90deg,#ffb86c,#ff6b6b)}
+
+  /* file list */
+  .ctx-file{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px}
+  .ctx-file .cf-info{flex:1;min-width:0}
+  .ctx-file .cf-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctx-file .cf-meta{font-size:11px;color:var(--muted);margin-top:3px}
+  .ctx-file .cf-acts{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+  .toggle-sw{position:relative;width:36px;height:20px;cursor:pointer}
+  .toggle-sw input{opacity:0;width:0;height:0;position:absolute}
+  .toggle-sw .sw{position:absolute;inset:0;background:#3a3f4e;border-radius:20px;transition:.15s}
+  .toggle-sw .sw:before{content:"";position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;left:3px;top:3px;transition:.15s}
+  .toggle-sw input:checked+.sw{background:var(--accent-2)}
+  .toggle-sw input:checked+.sw:before{transform:translateX(16px)}
+
+  /* scope row */
+  .scope-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
+  .scope-row select{background:var(--panel-2);border:1px solid var(--line);border-radius:7px;color:var(--text);font-size:12px;padding:4px 8px}
+
+  /* upload zone */
+  .upload-zone{border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;cursor:pointer;color:var(--muted);font-size:13px;transition:border-color .12s}
+  .upload-zone:hover{border-color:var(--accent)}
+  /* Files panel */
+  .file-item{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:14px}
+  .file-item .fi-icon{font-size:22px;flex-shrink:0}
+  .file-item .fi-info{flex:1;min-width:0}
+  .file-item .fi-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .file-item .fi-meta{font-size:11px;color:var(--muted);margin-top:3px}
+  .file-item .fi-acts{display:flex;gap:8px;flex-shrink:0}
+  .file-badge{font-size:10px;font-weight:700;letter-spacing:.08em;padding:2px 7px;border-radius:6px;border:1px solid;display:inline-block;margin-left:6px}
+  .file-badge.html{color:#ffb86c;border-color:#ffb86c}
+  .file-badge.md{color:var(--accent);border-color:var(--accent)}
+
+  /* Compile mode toggle */
+  .cmp-mode-toggle{display:flex;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:14px}
+  .cmp-mode-btn{flex:1;padding:8px 12px;font-size:13px;font-weight:600;background:var(--panel-2);color:var(--muted);border:none;cursor:pointer;transition:all .12s}
+  .cmp-mode-btn.active{background:var(--accent);color:#0b1020}
+
+  /* Compile history */
+  .cmp-hist-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;max-height:220px;overflow-y:auto}
+  .cmp-hist-item{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;transition:border-color .12s}
+  .cmp-hist-item:hover{border-color:var(--accent)}
+  .cmp-hist-req{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmp-hist-meta{font-size:11px;color:var(--muted);margin-top:3px}
+  .cmp-hist-acts{display:flex;gap:8px;margin-top:6px}
+  .cmp-hist-item textarea.cmp-hist-edit{width:100%;background:var(--panel);border:1px solid var(--accent);border-radius:7px;color:var(--text);font-size:13px;padding:6px 8px;margin-top:6px;resize:none;min-height:36px}
+
+  /* Lasso */
+  #lasso{position:absolute;border:1.5px dashed var(--accent-2);background:rgba(122,240,192,.06);border-radius:3px;pointer-events:none;display:none;z-index:60}
+  .ctx-indicator{font-size:11px;font-weight:700;letter-spacing:.08em;padding:2px 7px;border-radius:6px;border:1px solid}
+  .ctx-indicator.on{color:var(--accent-2);border-color:var(--accent-2)}
+  .ctx-indicator.off{color:var(--muted);border-color:var(--line)}
+  .cf-file-mode{display:flex;gap:4px;margin-top:6px}
+  .cf-mode-btn{flex:1;font-size:10px;font-weight:700;letter-spacing:.04em;padding:3px 4px;border-radius:6px;
+    border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;text-align:center;transition:all .12s}
+  .cf-mode-btn.active{border-color:var(--accent-2);color:var(--accent-2);background:#1a2a28}
+  .cf-mode-btn.active.off-mode{border-color:var(--danger);color:var(--danger);background:#2a1a1a}
+  .cf-instruction{width:100%;margin-top:6px;background:var(--panel);border:1px solid var(--line);border-radius:7px;
+    color:var(--text);font-size:12px;padding:6px 9px;resize:none;min-height:48px;font-family:inherit;line-height:1.4}
+  .cf-instruction::placeholder{color:var(--muted)}
+  .cf-instruction:focus{outline:none;border-color:var(--accent-2)}
+  .ctx-file{flex-direction:column;gap:8px}
+
+  /* Dual range slider */
+  .range-wrap{position:relative;height:28px;margin-top:4px}
+  .range-track{position:absolute;top:50%;transform:translateY(-50%);left:0;right:0;height:4px;border-radius:4px;background:var(--line)}
+  .range-fill{position:absolute;top:50%;transform:translateY(-50%);height:4px;border-radius:4px;background:var(--accent-2);pointer-events:none}
+  .range-wrap input[type=range]{position:absolute;width:100%;top:50%;transform:translateY(-50%);appearance:none;-webkit-appearance:none;background:transparent;pointer-events:none;margin:0;padding:0;height:20px}
+  .range-wrap input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent-2);border:2px solid var(--bg);cursor:pointer;pointer-events:all;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+  .range-wrap input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent-2);border:2px solid var(--bg);cursor:pointer;pointer-events:all}
+  .range-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:2px}
+  .range-labels span{color:var(--accent-2);font-weight:700}
+
+  /* Note nodes */
+  .node.note{background:linear-gradient(135deg,#1e1a10,#2a2410);border-color:#a08c40;font-family:var(--serif);font-size:13px}
+  .node.note .port{background:#a08c40}
+
+  /* Research nodes */
+  .node.research{background:linear-gradient(135deg,#2b1a08,#3d2509);border-color:#c87c2a}
+  .node.research-data{background:linear-gradient(135deg,#0d200f,#0a2d14);border-color:#3a8a4a;font-size:12px}
+  .node.research .port{background:#c87c2a}
+  .node.research-data .port{background:#3a8a4a}
+  #researchProgress{color:var(--accent-2);font-size:13px;margin:10px 0;min-height:18px;font-style:italic}
+  /* Research view panel */
+  .rv-body{max-height:72vh;overflow-y:auto;padding-right:6px;display:flex;flex-direction:column;gap:18px}
+  .rv-section-title{font-size:10px;letter-spacing:.14em;color:#c87c2a;font-weight:700;margin-bottom:8px}
+  .rv-strategy{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:11px 14px;font-size:13px;line-height:1.5;color:var(--muted);font-style:italic}
+  .rv-entries{display:flex;flex-direction:column;gap:6px}
+  .rv-entry{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:9px 13px;font-size:13px;line-height:1.5;font-family:var(--serif);cursor:pointer;transition:border-color .12s,background .12s;position:relative}
+  .rv-entry:hover{border-color:#c87c2a;background:#2a1e0e}
+  .rv-entry.copied{border-color:var(--accent-2);background:#0d2010}
+  .rv-entry .rv-copy-hint{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--muted);opacity:0;transition:opacity .12s;letter-spacing:.06em}
+  .rv-entry:hover .rv-copy-hint{opacity:1}
+  .rv-ln{color:var(--muted);font-size:12px;font-style:italic;padding:4px 0}
+  .res-section{margin-bottom:16px}
+  .res-section-title{font-size:10px;letter-spacing:.14em;color:var(--accent-2);font-weight:700;margin-bottom:8px}
+  .res-item{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px;line-height:1.5;margin-bottom:5px;font-family:var(--serif)}
+  .res-modal-body{max-height:60vh;overflow-y:auto;padding-right:4px}
+
+  /* Essence node */
+  .node.essence{background:linear-gradient(135deg,#2e1065,#4c1d95);border-color:#7c3aed}
+  .node.essence .port{background:#7c3aed}
+
+  /* Prompt node */
+  .node.prompt{background:linear-gradient(135deg,#451a03,#78350f);border-color:#d97706}
+  .node.prompt .port{background:#d97706}
+
+  /* Character node (Pass 2) */
+  .node.character{background:linear-gradient(135deg,#1a1240,#2a1a60);border-color:#6c5ce7}
+  .node.character .port{background:#6c5ce7}
+  /* Character interview panel */
+  .char-interview-modal{display:flex;flex-direction:column;height:min(84vh,720px)}
+  .char-interview-header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .char-tabs{display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-shrink:0}
+  .char-tab{padding:6px 16px;font-size:12px;font-weight:700;letter-spacing:.04em;background:var(--panel-2);color:var(--muted);border:none;cursor:pointer;transition:all .12s}
+  .char-tab.active{background:#2a1a60;color:#b4a8ff}
+  .char-progress-badge{font-size:11px;font-weight:700;letter-spacing:.08em;color:#6c5ce7;background:#1a1240;border:1px solid #3a2a80;border-radius:20px;padding:3px 10px;white-space:nowrap;flex-shrink:0}
+  .char-body{display:flex;flex:1;min-height:0}
+  .char-left{flex:1;min-width:0;padding:20px 22px;display:flex;flex-direction:column;overflow-y:auto;border-right:1px solid var(--line)}
+  .char-right{width:240px;flex-shrink:0;padding:14px 16px;overflow-y:auto;background:var(--panel-2)}
+  .char-phase-label{font-size:10px;letter-spacing:.16em;color:#6c5ce7;font-weight:700;margin-bottom:10px}
+  .char-q-text{font-family:var(--serif);font-size:19px;line-height:1.55;color:var(--text);margin-bottom:18px}
+  .char-sugg-cards{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+  .char-sugg-card{background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5;cursor:pointer;transition:border-color .12s,background .12s;color:var(--text)}
+  .char-sugg-card:hover{border-color:#6c5ce7;background:#1a1240}
+  .char-sugg-card.selected{border-color:#6c5ce7;background:#2a1a60;color:#b4a8ff}
+  .char-sugg-loading{color:var(--muted);font-size:13px;font-style:italic;padding:10px 0;display:flex;align-items:center;gap:8px}
+  .char-custom-input{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:14px;font-family:var(--serif);padding:10px 13px;resize:none;min-height:64px;line-height:1.55;margin-top:auto}
+  .char-custom-input:focus{outline:none;border-color:#6c5ce7}
+  .char-nav{display:flex;gap:8px;margin-top:12px;align-items:center;flex-shrink:0}
+  .char-answered-item{padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer}
+  .char-answered-item:last-child{border-bottom:none}
+  .char-answered-item:hover .char-answered-a{color:var(--accent-2)}
+  .char-answered-phase{font-size:9px;letter-spacing:.12em;color:#6c5ce7;font-weight:700;margin-bottom:3px}
+  .char-answered-q-text{font-size:11px;color:var(--muted);margin-bottom:3px;line-height:1.4}
+  .char-answered-a{font-family:var(--serif);font-size:12px;line-height:1.45;color:var(--text);transition:color .12s}
+  .char-profile-pane{flex:1;padding:20px 22px;display:flex;flex-direction:column;gap:12px;overflow:hidden;min-height:0}
+  .char-profile-controls{display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap}
+  .char-profile-textarea{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;color:var(--text);font-family:var(--serif);font-size:14px;line-height:1.7;padding:16px;resize:none;min-height:0}
+  .char-profile-textarea:focus{outline:none;border-color:#6c5ce7}
+
+  /* Provider tabs (Settings modal) */
+  .provider-tabs{display:flex;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:16px 0 0}
+  .provider-tab{flex:1;padding:10px 8px;font-size:13px;font-weight:700;letter-spacing:.04em;
+    background:var(--panel-2);color:var(--muted);border:none;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .12s;border-right:1px solid var(--line)}
+  .provider-tab:last-child{border-right:none}
+  .provider-tab .ptab-icon{font-size:18px;line-height:1}
+  .provider-tab .ptab-label{font-size:11px;letter-spacing:.06em}
+  .provider-tab.active{background:var(--accent);color:#0b1020}
+  .provider-tab.active.openai-tab{background:linear-gradient(135deg,#10a37f,#1a7f5a);color:#fff}
+  .provider-tab.active.gemini-tab{background:linear-gradient(135deg,#4285f4,#a855f7);color:#fff}
+  .provider-panel{margin-top:18px}
+  .provider-info{font-size:12px;color:var(--muted);margin-bottom:14px;padding:10px 12px;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:9px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .provider-info a{color:var(--accent);font-weight:600;font-size:12px;white-space:nowrap}
+  .provider-info .pinfo-desc{line-height:1.5;flex:1}
+
+  /* Per-tool model picker */
+  .tool-model-bar{display:flex;align-items:center;gap:6px;padding:7px 10px;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:9px;margin:10px 0 4px}
+  .tool-model-bar .tmb-icon{font-size:14px;flex-shrink:0;transition:color .12s;min-width:16px;text-align:center}
+  .tool-model-bar .tmb-label{font-size:10px;letter-spacing:.1em;color:var(--muted);font-weight:700;white-space:nowrap;flex-shrink:0}
+  .tmb-sel{background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--text);
+    font-size:12px;padding:4px 7px;cursor:pointer;transition:border-color .12s;flex:1}
+  .tmb-sel:hover{border-color:var(--accent)}
+  .tmb-sel:focus{outline:none;border-color:var(--accent-2)}
+  .tmb-provider{max-width:90px;flex:0 0 auto}
+  .tmb-model{flex:1}
+  /* Toolbar inline model bar (Expand) */
+  .toolbar-model-bar{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:9px;height:36px}
+  .toolbar-model-bar .tmb-icon{font-size:12px;flex-shrink:0}
+  .toolbar-model-bar .tmb-sel{font-size:11px;padding:3px 6px;background:var(--panel);max-width:72px}
+  .toolbar-model-bar .tmb-model{max-width:110px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas">
+    <svg id="edges"><g id="edge-group"></g></svg>
+    <div id="world"></div>
+    <div id="lasso"></div>
+  </div>
+
+  <div id="toolbar">
+    <button class="btn" id="projectsBtn">← Projects</button>
+    <span id="projName"></span>
+    <div class="sep"></div>
+    <button class="btn" id="undoBtn" title="Undo (Ctrl+Z)" disabled>↩</button>
+    <button class="btn" id="redoBtn" title="Redo (Ctrl+Y)" disabled>↪</button>
+    <div class="sep"></div>
+    <button class="btn primary" id="addBtn">+ Node</button>
+    <button class="btn" id="sculptBtn" disabled>✎ Sculpt</button>
+    <button class="btn ai" id="aiBtn" disabled>✦ Expand</button>
+    <div id="expandModelBar" class="toolbar-model-bar"></div>
+    <div class="sep"></div>
+    <button class="btn compile" id="compileBtn" disabled>⚙ Compile</button>
+    <span id="selInfo">0 selected</span>
+    <button class="btn" id="selectAllBtn">Select all</button>
+    <button class="btn" id="deleteBtn" disabled>🗑</button>
+    <div class="sep"></div>
+    <button class="btn" id="saveBtn">⬇ Export</button>
+    <button class="btn" id="loadBtn">⬆ Import</button>
+    <button class="btn" id="settingsBtn">⚙ Settings</button>
+    <button class="btn" id="researchBtn" style="background:linear-gradient(135deg,#c87c2a,#e8a44a);color:#0b1020;font-weight:700;border:none">🔍 Research</button>
+    <button class="btn" id="characterBtn" style="background:linear-gradient(135deg,#6c5ce7,#4834d4);color:#fff;font-weight:700;border:none">👤 Character</button>
+    <button class="btn" id="filesBtn">📁 Files</button>
+    <button class="btn" id="ctxBtn">📎 Context <span class="ctx-indicator off" id="ctxIndicator">OFF</span></button>
+  </div>
+
+  <div class="hint">
+    Double-click canvas to add · Double-click a node to <b>sculpt</b> · Drag the blue dot to connect · <kbd>Shift</kbd>+click to multi-select · <kbd>Ctrl</kbd>+drag to lasso · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+drag to add to selection · <kbd>Tab</kbd> adds a child · <kbd>Del</kbd> deletes
+  </div>
+
+  <div class="zoom">
+    <button class="btn" id="zoomOut">−</button>
+    <button class="btn" id="zoomReset">100%</button>
+    <button class="btn" id="zoomIn">+</button>
+  </div>
+</div>
+
+<!-- Context panel -->
+<div id="ctxPanel">
+  <div class="ctx-head">
+    <h3>📎 Context Files</h3>
+    <button class="btn" id="ctxClose">✕</button>
+  </div>
+  <div class="ctx-body">
+    <!-- Mode -->
+    <div>
+      <div style="font-size:11px;letter-spacing:.12em;color:var(--muted);font-weight:700;margin-bottom:8px">INJECTION MODE</div>
+      <div class="mode-toggle">
+        <div class="mode-btn active" data-mode="full">Full</div>
+        <div class="mode-btn" data-mode="truncate">Truncate</div>
+        <div class="mode-btn" data-mode="off">Off</div>
+      </div>
+      <div id="truncateRow" style="display:none;margin-top:10px">
+        <div class="scope-row" style="margin-bottom:6px"><span>Max words per file</span><span id="truncateVal" style="color:var(--accent-2);font-weight:700">8000</span></div>
+        <input type="range" id="truncateSlider" min="1000" max="30000" step="500" value="8000" style="width:100%;accent-color:var(--accent-2)" />
+      </div>
+    </div>
+    <!-- Scope -->
+    <div class="scope-row">
+      <span>Apply context to</span>
+      <select id="ctxScope">
+        <option value="all">All AI calls</option>
+        <option value="generation">Generation only</option>
+      </select>
+    </div>
+    <!-- Token budget -->
+    <div>
+      <div class="scope-row" style="margin-bottom:6px">
+        <span>Token budget used</span>
+        <span id="tokCount" style="font-weight:700;color:var(--accent-2)">0</span>
+      </div>
+      <div class="tok-bar-wrap"><div class="tok-bar" id="tokBar" style="width:0%"></div></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;text-align:right">of ~200k context window</div>
+    </div>
+    <!-- File list -->
+    <div id="ctxFileList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <!-- Upload -->
+    <div class="upload-zone" id="ctxUploadZone">
+      <div style="font-size:20px;margin-bottom:6px">+</div>
+      <div>Drop files or click to upload</div>
+      <div style="font-size:11px;margin-top:4px;color:var(--muted)">PDF · TXT · MD · HTML</div>
+    </div>
+  </div>
+  <div class="ctx-footer" style="font-size:11px;color:var(--muted);line-height:1.5">
+    Enabled files are injected into every AI call per the mode above. Token counts are estimated (~1.3× word count).
+  </div>
+</div>
+<input type="file" id="ctxFileInput" accept=".pdf,.txt,.md,.html,.htm" multiple style="display:none" />
+
+<!-- Home / project picker -->
+<div id="home">
+  <div class="home-wrap">
+    <div class="home-head">
+      <div>
+        <div class="home-title">Idea Sculpture</div>
+        <div class="home-sub">Each project holds a brief that gives the AI context. Inside a project, sculpt ideas one node at a time — Desire, Resistance, Change — then compile a selection into a screenplay, recipe, pitch, or anything else.</div>
+      </div>
+      <button class="btn" id="homeSettingsBtn">⚙ Settings</button>
+    </div>
+    <div class="proj-grid" id="projectGrid"></div>
+  </div>
+</div>
+
+<!-- New project modal -->
+<div class="overlay" id="projOverlay">
+  <div class="modal"><div class="modal-pad">
+    <h2 id="projModalTitle">New project</h2>
+    <p class="sub">Give it a name and a quick brief of what it's about. The AI uses this brief as context for every suggestion inside this project.</p>
+    <label>PROJECT NAME</label>
+    <input type="text" id="projNameInput" placeholder="e.g. Sci-fi heist screenplay" />
+    <label>WHAT IS THIS PROJECT ABOUT?</label>
+    <textarea id="projBriefInput" placeholder="e.g. A character-driven heist set on a decaying orbital station. Tone: tense, witty, morally grey. Goal: feature-length screenplay." style="min-height:110px"></textarea>
+    <div class="row">
+      <button class="btn" id="projCancel">Cancel</button>
+      <button class="btn primary" id="projCreate">Create project</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Sculpt modal -->
+<div class="overlay" id="sculptOverlay">
+  <div class="modal" style="width:97vw;max-width:1500px;height:94vh;max-height:94vh;display:flex;flex-direction:column"><div class="modal-pad" style="flex:1;display:flex;flex-direction:column;min-height:0">
+    <div class="titlebar" style="margin-bottom:18px">
+      <input class="node-title" id="scTitle" placeholder="Name this idea…" />
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        <select id="scNodeType" style="background:var(--panel-2);border:1px solid var(--line);border-radius:9px;color:var(--text);font-size:13px;padding:7px 10px;cursor:pointer">
+          <option value="idea">💡 Idea</option>
+          <option value="essence">◇ Essence</option>
+          <option value="prompt">⚡ Prompt</option>
+          <option value="chat">💬 Chat</option>
+          <option value="note">📝 Note</option>
+        </select>
+        <button class="btn" id="scCancel">Close</button>
+      </div>
+    </div>
+    <!-- NOTE panel (shown when type=note) -->
+    <div id="scNotePanel" style="display:none">
+      <textarea id="scNoteText" placeholder="Type or paste your note here…" style="width:100%;min-height:260px;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;color:var(--text);font-size:15px;font-family:var(--serif);padding:14px;resize:vertical;line-height:1.6"></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button class="btn primary" id="scNoteSave">Save</button>
+      </div>
+    </div>
+    <!-- CHAT panel (shown when type=chat) -->
+    <div id="scChatPanel" style="display:none;flex:1;min-height:0;flex-direction:column">
+      <div class="chat-top">
+        <div id="chatModelBar"></div>
+        <label class="chat-ctx-toggle"><input type="checkbox" id="scChatCtx" checked /> include project + connected nodes as context</label>
+      </div>
+      <div class="chat-messages" id="scChatMessages"></div>
+      <div class="chat-input-row">
+        <textarea id="scChatInput" placeholder="Message…   (Enter to send · Shift+Enter for a new line)"></textarea>
+        <button class="btn ai" id="scChatSend">Send</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <button class="mini" id="scChatClear" style="color:var(--muted)">↻ clear conversation</button>
+        <span class="footer-note" id="scChatStatus"></span>
+      </div>
+    </div>
+    <div class="sculpt-body" id="scIdeaPanel">
+      <!-- LEFT: idea fields -->
+      <div class="sculpt-left" id="scIdeaLeft">
+        <div class="step" style="padding-top:0;padding-bottom:18px">
+          <div class="step-head"><span class="step-num">00 /</span><span class="step-name">OUTCOME</span></div>
+          <div class="step-q">What do you want to generate? <span class="footer-note">— controls format & focus, e.g. "a plot outline", "a scene", "character motivation", "dialogue"</span></div>
+          <textarea id="scOutcome" placeholder="Describe the focus of this paragraph…" style="min-height:44px"></textarea>
+        </div>
+        <div class="step" data-kind="desire">
+          <div class="step-head"><span class="step-num">01 /</span><span class="step-name">DESIRE</span></div>
+          <div class="step-q">What is the desire? <span class="footer-note">— what is wanted, pursued, or at stake</span></div>
+          <textarea data-field="desire" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-suggest="desire">✦ suggest</button><button class="mini" data-clear="desire" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-sugg="desire"></div>
+        </div>
+        <div class="step" data-kind="resistance">
+          <div class="step-head"><span class="step-num">02 /</span><span class="step-name">RESISTANCE</span></div>
+          <div class="step-q">What is the resistance? <span class="footer-note">— what opposes, blocks, or complicates it</span></div>
+          <textarea data-field="resistance" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-suggest="resistance">✦ suggest</button><button class="mini" data-clear="resistance" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-sugg="resistance"></div>
+        </div>
+        <div class="step" data-kind="change">
+          <div class="step-head"><span class="step-num">03 /</span><span class="step-name">CHANGE</span></div>
+          <div class="step-q">What is the change? <span class="footer-note">— the shift, turn, or resolution that results</span></div>
+          <textarea data-field="change" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-suggest="change">✦ suggest</button><button class="mini" data-clear="change" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-sugg="change"></div>
+        </div>
+      </div>
+      <!-- LEFT: essence fields -->
+      <div class="sculpt-left" id="scEssenceLeft" style="display:none">
+        <div class="step" style="padding-top:0;padding-bottom:18px">
+          <div class="step-head"><span class="step-num">00 /</span><span class="step-name">OUTCOME</span></div>
+          <div class="step-q">What do you want to generate? <span class="footer-note">— e.g. "a 1-page screenplay", "a Midjourney prompt", "a poem", "a scene"</span></div>
+          <textarea id="scEssenceOutcome" placeholder="Describe the format of this output…" style="min-height:44px"></textarea>
+        </div>
+        <div class="step" style="padding-top:0;padding-bottom:14px">
+          <div class="step-head"><span class="step-num">01 /</span><span class="step-name" style="color:#a78bfa">WHAT HAPPENS</span></div>
+          <div class="step-q">What happens? <span class="footer-note">— the surface event</span></div>
+          <textarea data-efield="e1" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-esuggest="e1">✦ suggest</button><button class="mini" data-eclear="e1" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-esugg="e1"></div>
+        </div>
+        <div class="step">
+          <div class="step-head"><span class="step-num">02 /</span><span class="step-name" style="color:#a78bfa">WHY IT HAPPENS</span></div>
+          <div class="step-q">Why does it happen? <span class="footer-note">— motivation</span></div>
+          <textarea data-efield="e2" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-esuggest="e2">✦ suggest</button><button class="mini" data-eclear="e2" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-esugg="e2"></div>
+        </div>
+        <div class="step">
+          <div class="step-head"><span class="step-num">03 /</span><span class="step-name" style="color:#a78bfa">REALLY ABOUT</span></div>
+          <div class="step-q">What is it really about? <span class="footer-note">— theme</span></div>
+          <textarea data-efield="e3" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-esuggest="e3">✦ suggest</button><button class="mini" data-eclear="e3" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-esugg="e3"></div>
+        </div>
+        <div class="step">
+          <div class="step-head"><span class="step-num">04 /</span><span class="step-name" style="color:#a78bfa">HUMAN TRUTH</span></div>
+          <div class="step-q">What human truth is underneath? <span class="footer-note">— universal truth</span></div>
+          <textarea data-efield="e4" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-esuggest="e4">✦ suggest</button><button class="mini" data-eclear="e4" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-esugg="e4"></div>
+        </div>
+        <div class="step">
+          <div class="step-head"><span class="step-num">05 /</span><span class="step-name" style="color:#a78bfa">EXPRESSION</span></div>
+          <div class="step-q">Simplest expression of that truth? <span class="footer-note">— scene, image, sound, gesture</span></div>
+          <textarea data-efield="e5" placeholder="Type your own, or use a suggestion below…"></textarea>
+          <div class="sugg-label">SUGGESTED VALUES <button class="mini" data-esuggest="e5">✦ suggest</button><button class="mini" data-eclear="e5" style="color:var(--muted)">✕ clear</button></div>
+          <div class="sugg-list" data-esugg="e5"></div>
+        </div>
+        <div style="border-top:1px solid var(--line);margin:16px 0 12px;padding-top:16px">
+          <div class="step-head" style="margin-bottom:12px"><span class="step-name" style="color:#a78bfa;font-size:11px;letter-spacing:.08em">THE THREE FILTERS</span></div>
+          <div class="step" style="padding-top:0">
+            <div class="step-head"><span class="step-num">F1 /</span><span class="step-name" style="color:#a78bfa">SIMPLER</span></div>
+            <div class="step-q">Is there a simpler expression?</div>
+            <textarea data-efield="f1" placeholder="Could this be even simpler?…" style="min-height:52px"></textarea>
+          </div>
+          <div class="step">
+            <div class="step-head"><span class="step-num">F2 /</span><span class="step-name" style="color:#a78bfa">TRUTHFUL</span></div>
+            <div class="step-q">Is there a more truthful expression?</div>
+            <textarea data-efield="f2" placeholder="What's the most honest version?…" style="min-height:52px"></textarea>
+          </div>
+          <div class="step">
+            <div class="step-head"><span class="step-num">F3 /</span><span class="step-name" style="color:#a78bfa">SURPRISING</span></div>
+            <div class="step-q">Is there a more surprising expression?</div>
+            <textarea data-efield="f3" placeholder="What would no one expect?…" style="min-height:52px"></textarea>
+          </div>
+          <div class="sugg-label" style="margin-top:8px"><button class="mini" id="scRunFilters" style="color:#a78bfa">✦ run filters</button></div>
+          <div id="scFilterSugg" class="sugg-list"></div>
+        </div>
+      </div>
+      <!-- LEFT: prompt fields -->
+      <div class="sculpt-left" id="scPromptLeft" style="display:none">
+        <div class="step" style="padding-top:0">
+          <div class="step-head"><span class="step-num">01 /</span><span class="step-name" style="color:#fbbf24">YOUR PROMPT</span></div>
+          <div class="step-q">What do you want to generate? <span class="footer-note">— be as specific or open-ended as you like</span></div>
+          <textarea id="scPromptText" placeholder="Type your prompt here… Connected nodes will be passed as context automatically." style="min-height:320px;resize:vertical"></textarea>
+        </div>
+      </div>
+      <!-- RIGHT: paragraph -->
+      <div class="sculpt-right" id="scIdeaRight">
+        <div class="para-label">RESULTING PARAGRAPH</div>
+        <div class="para-result" id="scParaView" contenteditable="true" spellcheck="true" style="outline:none;cursor:text" title="Click to edit">Fill the three fields, then generate a paragraph that fuses them.</div>
+        <div class="wc-row" style="margin-top:auto;padding-top:16px">
+          <label>LENGTH</label>
+          <input type="range" id="scWordCount" min="40" max="700" step="20" value="120" />
+          <span class="wc-val" id="scWordCountVal">~120 words</span>
+        </div>
+        <div id="sculptModelBar"></div>
+        <div class="sculpt-actions">
+          <button class="mini" id="scRandomAll" style="margin-right:auto">↻ RANDOMIZE ALL</button>
+          <button class="btn ai" id="scGenerate">✦ Generate paragraph</button>
+          <button class="btn primary" id="scSave">Save</button>
+        </div>
+        <p class="footer-note" style="margin:10px 0 0;text-align:right">Suggestions adapt to the project brief, this node's title, and its connected parent ideas.</p>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- Compile modal -->
+<div class="overlay" id="compileOverlay">
+  <div class="modal"><div class="modal-pad">
+    <h2>Compile</h2>
+    <p class="sub" id="cmpSubtitle">Describe what to compile the selected idea(s) into. The AI will then ask you 5 quick questions to shape it.</p>
+    <div id="cmpStep1">
+      <div class="cmp-mode-toggle">
+        <button class="cmp-mode-btn active" data-cmode="new">✦ New file</button>
+        <button class="cmp-mode-btn" data-cmode="edit">✎ Edit existing file</button>
+      </div>
+      <!-- New file section -->
+      <div id="cmpNewSection">
+        <div id="cmpHistSection" style="display:none">
+          <label style="display:flex;align-items:center;justify-content:space-between">
+            RECENT PROMPTS
+            <button class="mini" id="cmpHistClear" style="color:var(--danger)">clear all</button>
+          </label>
+          <div class="cmp-hist-list" id="cmpHistList"></div>
+        </div>
+        <label>WHAT DO YOU WANT TO COMPILE?</label>
+        <textarea id="cmpRequest" placeholder="e.g. an HTML screenplay · an MD gameplay flow · an HTML pitch presentation for this idea"></textarea>
+      </div>
+      <!-- Edit existing section -->
+      <div id="cmpEditSection" style="display:none">
+        <label>CHOOSE FILE TO EDIT</label>
+        <select id="cmpFileSelect" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 12px;font-size:14px;margin-bottom:12px">
+          <option value="">— select a file —</option>
+        </select>
+        <label>WHAT DO YOU WANT TO CHANGE OR ADD?</label>
+        <textarea id="cmpEditRequest" placeholder="e.g. add a second act section · change the color scheme · add dialogue between the two leads"></textarea>
+      </div>
+      <div id="compileModelBar"></div>
+      <div class="row">
+        <button class="btn" id="cmpCancel1">Cancel</button>
+        <button class="btn compile" id="cmpAsk">Continue →</button>
+      </div>
+    </div>
+    <div id="cmpStep2" style="display:none">
+      <label>5 QUESTIONS TO SHAPE IT</label>
+      <div id="cmpQuestions"></div>
+      <div class="row spread">
+        <button class="mini" id="cmpBack">← back</button>
+        <div style="display:flex;gap:10px">
+          <button class="btn" id="cmpCancel2">Cancel</button>
+          <button class="btn compile" id="cmpBuild">⚙ Build it</button>
+        </div>
+      </div>
+    </div>
+    <div id="cmpStep3" style="display:none">
+      <label>RESULT <span class="filetag" id="cmpFileTag"></span></label>
+      <div class="para-result" id="cmpResultView" style="max-height:340px;overflow:auto;font-family:var(--serif)"></div>
+      <div class="row spread">
+        <button class="mini" id="cmpRestart">↻ start over</button>
+        <div style="display:flex;gap:10px">
+          <button class="btn" id="cmpClose">Close</button>
+          <button class="btn" id="cmpPreview">↗ Preview</button>
+          <button class="btn primary" id="cmpDownload">⬇ Download file</button>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- Character: Create modal (Pass 2) -->
+<div class="overlay" id="charCreateOverlay">
+  <div class="modal" style="width:min(480px,96vw)"><div class="modal-pad">
+    <h2>👤 New Character</h2>
+    <p class="sub">Give them a name or a one-line seed. You'll build the full psychological profile in the interview.</p>
+    <label>CHARACTER NAME / SEED</label>
+    <input type="text" id="charCreateName" placeholder="e.g. Maria · retired detective who collects toy trains" />
+    <div class="row" style="margin-top:18px">
+      <button class="btn" id="charCreateCancel">Cancel</button>
+      <button class="btn" id="charCreateStart" style="background:linear-gradient(135deg,#6c5ce7,#4834d4);color:#fff;font-weight:700;border:none">Create &amp; start interview →</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Character: Interview panel (Pass 2) -->
+<div class="overlay" id="charInterviewOverlay">
+  <div class="modal char-interview-modal" style="width:min(980px,96vw)">
+
+    <!-- Header -->
+    <div class="char-interview-header">
+      <input class="node-title" id="charInterviewName" placeholder="Character name…" style="font-size:18px;font-weight:600;flex:1;min-width:0;padding:2px 4px" />
+      <div id="charModelBar"></div>
+      <div class="char-tabs">
+        <button class="char-tab active" id="charTabInterview">Interview</button>
+        <button class="char-tab" id="charTabProfile">Profile</button>
+      </div>
+      <span class="char-progress-badge" id="charProgressBadge">0 answered</span>
+      <button class="btn" id="charInterviewClose">✕ Close</button>
+    </div>
+
+    <!-- Interview pane -->
+    <div class="char-body" id="charInterviewPane">
+
+      <!-- Left: current question -->
+      <div class="char-left">
+        <div class="char-phase-label" id="charPhaseLabel">IDENTITY · 1 / 63</div>
+        <div class="char-q-text" id="charQText">Loading question…</div>
+        <div style="margin-bottom:12px">
+          <input id="charHint" type="text" placeholder="Lock a behavior… e.g. makes bad jokes, appears calm, inside full of fear — AI gives 3 specific versions" style="width:100%;box-sizing:border-box;background:var(--panel-2);border:1px dashed var(--line);border-radius:8px;color:var(--text);font-size:13px;font-family:var(--serif);padding:8px 12px;outline:none;" onfocus="this.style.borderColor='#6c5ce7'" onblur="this.style.borderColor=''" onkeydown="if(event.key==='Enter'){event.preventDefault();charReroll();}">
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:10px;letter-spacing:.12em;color:var(--muted);font-weight:700">SUGGESTIONS</div>
+            <span style="font-size:10px;color:var(--muted)">Generic</span>
+            <input id="charCreativity" type="range" min="1" max="5" value="3" style="width:72px;accent-color:#6c5ce7;cursor:pointer" title="1 = plain facts, 5 = vivid/literary">
+            <span style="font-size:10px;color:var(--muted)">Creative</span>
+          </div>
+          <button id="charRerollBtn" class="mini" style="font-size:11px;padding:3px 10px;opacity:.7" onclick="charReroll()">↺ Reroll</button>
+        </div>
+        <div class="char-sugg-cards" id="charSuggCards">
+          <div class="char-sugg-loading"><span class="spinner"></span> generating suggestions…</div>
+        </div>
+        <textarea class="char-custom-input" id="charCustomAnswer" placeholder="Write your own answer, or click a suggestion above…" rows="3"></textarea>
+        <div class="char-nav">
+          <button class="mini" id="charQBack">← Back</button>
+          <button class="mini" id="charQSkip" style="color:var(--muted)">Skip</button>
+          <div style="flex:1"></div>
+          <button class="btn" id="charInterviewClose2">Close</button>
+          <button class="btn" id="charQNext" style="background:linear-gradient(135deg,#6c5ce7,#4834d4);color:#fff;font-weight:700;border:none">Next →</button>
+        </div>
+      </div>
+
+      <!-- Right: answered questions -->
+      <div class="char-right">
+        <div style="font-size:9px;letter-spacing:.14em;color:var(--muted);font-weight:700;margin-bottom:10px">ANSWERED</div>
+        <div id="charAnsweredList"></div>
+        <div id="charAnsweredEmpty" style="color:var(--muted);font-size:12px;font-style:italic">No answers yet.</div>
+      </div>
+
+    </div>
+
+    <!-- Profile pane -->
+    <div class="char-profile-pane" id="charProfilePane" style="display:none">
+      <div class="char-profile-controls">
+        <label style="font-size:10px;letter-spacing:.12em;color:var(--muted);font-weight:700;white-space:nowrap">PROFILE LENGTH</label>
+        <input type="range" id="charProfileWords" min="200" max="1500" step="100" value="600" style="flex:1;accent-color:#6c5ce7;min-width:80px" />
+        <span id="charProfileWordsVal" style="font-size:12px;color:#6c5ce7;font-weight:700;min-width:56px">600 words</span>
+        <button class="btn" id="charProfileGenerate" style="background:linear-gradient(135deg,#6c5ce7,#4834d4);color:#fff;font-weight:700;border:none;white-space:nowrap">✦ Generate profile</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <input id="charProfileStyle" type="text" placeholder="Writing style… e.g. Steinbeck, dry and simple  /  clinical and detached  /  warm, Kore-eda" style="flex:1;box-sizing:border-box;background:var(--panel-2);border:1px dashed var(--line);border-radius:8px;color:var(--text);font-size:13px;font-family:var(--serif);padding:8px 12px;outline:none;" onfocus="this.style.borderColor='#6c5ce7'" onblur="this.style.borderColor=''">
+        <select id="charStylePresets" style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:12px;padding:7px 8px;cursor:pointer;max-width:140px" onchange="charLoadStylePreset(this.value)">
+          <option value="">— Presets —</option>
+        </select>
+        <button class="mini" onclick="charSaveStylePreset()" title="Save current style as preset" style="padding:6px 10px">＋</button>
+        <button class="mini" onclick="charDeleteStylePreset()" title="Delete selected preset" style="padding:6px 10px;color:var(--danger)">✕</button>
+      </div>
+      <textarea class="char-profile-textarea" id="charProfileText" placeholder="Answer some interview questions first, then generate a full psychological character profile here…"></textarea>
+    </div>
+
+  </div>
+</div>
+
+<!-- Files modal -->
+<div class="overlay" id="filesOverlay">
+  <div class="modal" style="width:min(700px,96vw)"><div class="modal-pad">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <h2>📁 Project Files</h2>
+      <button class="btn" id="filesClose">✕ Close</button>
+    </div>
+    <div id="filesEmpty" style="color:var(--muted);font-size:14px;padding:30px 0;text-align:center;display:none">
+      No files yet. Compile something to create your first file.
+    </div>
+    <div id="filesList" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div></div>
+</div>
+
+<!-- Edit file modal -->
+<div class="overlay" id="fileEditOverlay">
+  <div class="modal"><div class="modal-pad">
+    <h2 id="fileEditTitle">Edit file</h2>
+    <p class="sub" id="fileEditSub"></p>
+    <label>EDIT INSTRUCTION</label>
+    <textarea id="fileEditPrompt" placeholder="e.g. Add a second act section · Change the color scheme to dark · Add character backstory for Marco" style="min-height:90px"></textarea>
+    <div class="row">
+      <button class="btn" id="fileEditCancel">Cancel</button>
+      <button class="btn compile" id="fileEditRun">⚙ Apply edit</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Research view panel -->
+<div class="overlay" id="researchViewOverlay">
+  <div class="modal" style="width:min(760px,96vw)"><div class="modal-pad">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px">
+      <div style="flex:1;min-width:0">
+        <input id="rvTitle" style="background:none;border:none;border-bottom:1px solid var(--line);color:var(--text);font-size:20px;font-weight:700;font-family:var(--sans);width:100%;padding:2px 0;margin:0 0 6px;outline:none" />
+        <p class="sub" style="margin:0">Click any entry to copy it. Raw material for characters, scenes, and dialogue.</p>
+      </div>
+      <button class="btn" id="rvClose" style="flex-shrink:0">✕ Close</button>
+    </div>
+    <div class="rv-body" id="rvBody"></div>
+  </div></div>
+</div>
+
+<!-- Research modal -->
+<div class="overlay" id="researchOverlay">
+  <div class="modal" style="width:min(700px,96vw)"><div class="modal-pad">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div>
+        <h2>🔍 Documentary Researcher</h2>
+        <p class="sub">Deep-mines firsthand human experience — behaviors, contradictions, rituals, fears, strange truths. Searches all relevant languages.</p>
+      </div>
+      <button class="btn" id="researchClose" style="flex-shrink:0">✕</button>
+    </div>
+    <div id="researchInputSection">
+      <label>SUBJECT TO RESEARCH</label>
+      <input type="text" id="researchSubject" placeholder="e.g. submarine maintenance · Korean family caregiving · night-shift nurses" />
+      <div id="researchProgress"></div>
+      <div id="researchModelBar"></div>
+      <div class="row">
+        <button class="btn" id="researchCancel">Cancel</button>
+        <button class="btn" id="researchRun" style="background:linear-gradient(135deg,#c87c2a,#e8a44a);color:#0b1020;font-weight:700;border:none">🔍 Research</button>
+      </div>
+    </div>
+    <div id="researchResultSection" style="display:none">
+      <div class="res-modal-body" id="researchResultBody"></div>
+      <div class="row" style="margin-top:16px">
+        <button class="btn" id="researchAgain">← New research</button>
+        <button class="btn primary" id="researchPlace">Place nodes on board</button>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- Settings modal -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal"><div class="modal-pad">
+    <h2>⚙ AI Settings</h2>
+    <p class="sub">Choose your AI provider, paste an API key, and pick a model. Keys are stored only in this browser and sent directly to the provider.</p>
+
+    <!-- Provider tabs -->
+    <div class="provider-tabs">
+      <button class="provider-tab claude-tab" data-provider="claude">
+        <span class="ptab-icon">✦</span>
+        <span class="ptab-label">CLAUDE</span>
+      </button>
+      <button class="provider-tab openai-tab" data-provider="openai">
+        <span class="ptab-icon">◆</span>
+        <span class="ptab-label">OPENAI</span>
+      </button>
+      <button class="provider-tab gemini-tab" data-provider="gemini">
+        <span class="ptab-icon">◈</span>
+        <span class="ptab-label">GEMINI</span>
+      </button>
+    </div>
+
+    <!-- Claude panel -->
+    <div class="provider-panel" id="panel-claude">
+      <div class="provider-info">
+        <span class="pinfo-desc">Anthropic's Claude — best for creative writing and long-form generation.</span>
+        <a href="https://console.anthropic.com" target="_blank">Get key →</a>
+      </div>
+      <label>API KEY</label>
+      <input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" />
+      <label>MODEL</label>
+      <select id="claudeModel">
+        <option value="claude-opus-4-8">Claude Opus 4.8 — best quality (recommended)</option>
+        <option value="claude-sonnet-4-6">Claude Sonnet 4.6 — balanced</option>
+        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — fast &amp; cheap</option>
+      </select>
+    </div>
+
+    <!-- OpenAI panel -->
+    <div class="provider-panel" id="panel-openai" style="display:none">
+      <div class="provider-info">
+        <span class="pinfo-desc">OpenAI's GPT models — widely supported, strong general reasoning.</span>
+        <a href="https://platform.openai.com/api-keys" target="_blank">Get key →</a>
+      </div>
+      <label>API KEY</label>
+      <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" />
+      <label>MODEL</label>
+      <select id="openaiModel">
+        <option value="gpt-5.5">GPT-5.5 — best quality (recommended)</option>
+        <option value="gpt-5">GPT-5 — balanced</option>
+        <option value="o3">o3 — strong reasoning</option>
+      </select>
+    </div>
+
+    <!-- Gemini panel -->
+    <div class="provider-panel" id="panel-gemini" style="display:none">
+      <div class="provider-info">
+        <span class="pinfo-desc">Google's Gemini — large context window, strong multimodal reasoning.</span>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank">Get key →</a>
+      </div>
+      <label>API KEY</label>
+      <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off" />
+      <label>MODEL</label>
+      <select id="geminiModel">
+        <option value="gemini-3.5-flash">Gemini 3.5 Flash — fast (recommended)</option>
+        <option value="gemini-2.5-pro">Gemini 2.5 Pro — best quality</option>
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash — balanced</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <button class="btn" id="settingsClose">Cancel</button>
+      <button class="btn primary" id="settingsSave">Save</button>
+    </div>
+  </div></div>
+</div>
+
+<input type="file" id="fileInput" accept="application/json" style="display:none" />
+<div id="para-tooltip"></div>
+
+<script>
+const PROJECTS_KEY = "ideasculpt.projects.v1";
+const OLD_MAP_KEY = "ideasculpt.v2";
+const CFG_KEY = "ideasculpt.cfg";
+
+/* working state for the currently open project's map */
+const state = {
+  nodes: {}, edges: [], sel: new Set(), primary: null, seq: 1,
+  view: { x:0, y:0, scale:1 },
+};
+
+/* ---------- undo / redo ---------- */
+const UNDO_MAX = 10;
+let undoStack = [], redoStack = [];
+function snapshotMap(){
+  return JSON.stringify({ nodes: state.nodes, edges: state.edges, seq: state.seq });
+}
+function pushUndo(){
+  undoStack.push(snapshotMap());
+  if(undoStack.length > UNDO_MAX) undoStack.shift();
+  redoStack = [];
+  refreshUndoUI();
+}
+function applySnapshot(snap){
+  const d = JSON.parse(snap);
+  // remove DOM nodes no longer in snapshot
+  Object.keys(state.nodes).forEach(id=>{ if(!d.nodes[id]){ const el=document.getElementById(id); if(el) el.remove(); } });
+  state.nodes = d.nodes; state.edges = d.edges; state.seq = d.seq;
+  state.sel.clear(); state.primary = null;
+  Object.keys(state.nodes).forEach(id => renderNode(id));
+  refreshSelUI(); drawEdges(); persist();
+}
+function undo(){
+  if(!undoStack.length) return;
+  redoStack.push(snapshotMap());
+  applySnapshot(undoStack.pop());
+  refreshUndoUI();
+}
+function redo(){
+  if(!redoStack.length) return;
+  undoStack.push(snapshotMap());
+  applySnapshot(redoStack.pop());
+  refreshUndoUI();
+}
+function refreshUndoUI(){
+  const u=document.getElementById("undoBtn"), r=document.getElementById("redoBtn");
+  if(u) u.disabled = undoStack.length === 0;
+  if(r) r.disabled = redoStack.length === 0;
+}
+/* projects store */
+let store = { projects:{}, current:null };
+
+const world = document.getElementById("world");
+const edgeGroup = document.getElementById("edge-group");
+const canvas = document.getElementById("canvas");
+const home = document.getElementById("home");
+
+/* ---------- config ---------- */
+function loadCfg(){ try{ return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; }catch{ return {}; } }
+function saveCfg(c){ try{ localStorage.setItem(CFG_KEY, JSON.stringify(c)); }catch{} }
+let cfg = loadCfg();
+
+/* ---------- projects store ---------- */
+function loadStore(){
+  try{ const s=JSON.parse(localStorage.getItem(PROJECTS_KEY)); if(s&&s.projects) store=s; }catch{}
+  // migrate an old single map into a default project
+  if(Object.keys(store.projects).length===0){
+    try{
+      const old=JSON.parse(localStorage.getItem(OLD_MAP_KEY));
+      if(old&&old.nodes&&Object.keys(old.nodes).length){
+        const id=pid();
+        store.projects[id]={ id, name:"My first map", brief:"", createdAt:Date.now(),
+          map:{ nodes:old.nodes, edges:old.edges||[], seq:old.seq||1, view:old.view||{x:0,y:0,scale:1} } };
+        saveStore();
+      }
+    }catch{}
+  }
+}
+function saveStore(){ try{ localStorage.setItem(PROJECTS_KEY, JSON.stringify(store)); }catch{} }
+function pid(){ return "p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function currentProject(){ return store.current ? store.projects[store.current] : null; }
+
+/* ---------- helpers ---------- */
+function uid(){ return "n" + (state.seq++); }
+function screenToWorld(sx, sy){ return { x:(sx-state.view.x)/state.view.scale, y:(sy-state.view.y)/state.view.scale }; }
+
+/* ---------- nodes ---------- */
+function createNode({text="New idea", x=0, y=0, root=false, id=null, _noUndo=false}){
+  if(!_noUndo) pushUndo();
+  const nid = id || uid();
+  state.nodes[nid] = { id:nid, text, x, y, root, desire:"", resistance:"", change:"", paragraph:"", outcome:"" };
+  renderNode(nid); persist();
+  return nid;
+}
+function renderNode(id){
+  const n = state.nodes[id];
+  let el = document.getElementById(id);
+  if(!el){
+    el = document.createElement("div");
+    el.id = id;
+    el.innerHTML = `<div class="badge">✦</div><div class="para-dot">¶</div><span class="label"></span><div class="port" title="Drag to connect"></div>`;
+    world.appendChild(el);
+    attachNodeEvents(el);
+  }
+  const hasContent = n.nodeType==="note" ? !!n.noteText : !!n.paragraph;
+  el.className = "node" + (n.root?" root":"") + (n.nodeType?" "+n.nodeType:"") + (hasContent?" has-para":"") + (state.sel.has(id)?" selected":"");
+  el.querySelector(".label").textContent = n.text;
+  el.style.left = n.x + "px";
+  el.style.top = n.y + "px";
+}
+function removeNode(id, _noUndo=false){
+  if(!_noUndo) pushUndo();
+  const el = document.getElementById(id); if(el) el.remove();
+  delete state.nodes[id];
+  state.edges = state.edges.filter(e => e.from!==id && e.to!==id);
+  state.sel.delete(id);
+  if(state.primary===id) state.primary = null;
+  refreshSelUI(); drawEdges(); persist();
+}
+
+/* ---------- selection ---------- */
+function clearSel(){ state.sel.forEach(id=>{const e=document.getElementById(id); if(e)e.classList.remove("selected");}); state.sel.clear(); state.primary=null; refreshSelUI(); }
+function selectOnly(id){ clearSel(); if(id){ state.sel.add(id); state.primary=id; const e=document.getElementById(id); if(e)e.classList.add("selected"); } refreshSelUI(); }
+function toggleSel(id){
+  if(state.sel.has(id)){ state.sel.delete(id); const e=document.getElementById(id); if(e)e.classList.remove("selected"); if(state.primary===id) state.primary=[...state.sel].pop()||null; }
+  else { state.sel.add(id); state.primary=id; const e=document.getElementById(id); if(e)e.classList.add("selected"); }
+  refreshSelUI();
+}
+function refreshSelUI(){
+  const n = state.sel.size;
+  document.getElementById("selInfo").textContent = n + " selected";
+  document.getElementById("compileBtn").disabled = n < 1;
+  document.getElementById("deleteBtn").disabled = n < 1;
+  document.getElementById("sculptBtn").disabled = !state.primary;
+  document.getElementById("aiBtn").disabled = !state.primary;
+}
+
+/* ---------- edges ---------- */
+function addEdge(from, to, _noUndo=false){
+  if(from===to) return;
+  if(state.edges.some(e=>(e.from===from&&e.to===to)||(e.from===to&&e.to===from))) return;
+  if(!_noUndo) pushUndo();
+  state.edges.push({from,to}); drawEdges(); persist();
+}
+function nodeCenter(id){
+  const n=state.nodes[id], el=document.getElementById(id);
+  const w=el?el.offsetWidth:100, h=el?el.offsetHeight:40;
+  return { x:n.x+w/2, y:n.y+h/2 };
+}
+function drawEdges(){
+  edgeGroup.innerHTML="";
+  edgeGroup.setAttribute("transform", `translate(${state.view.x},${state.view.y}) scale(${state.view.scale})`);
+  for(let i=0;i<state.edges.length;i++){
+    const e=state.edges[i];
+    if(!state.nodes[e.from]||!state.nodes[e.to]) continue;
+    const a=nodeCenter(e.from), b=nodeCenter(e.to), mx=(a.x+b.x)/2;
+    const d=`M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`;
+    // base path (solid underline)
+    const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d",d); p.setAttribute("fill","none"); p.setAttribute("stroke","#2a3248"); p.setAttribute("stroke-width","2");
+    edgeGroup.appendChild(p);
+    // ant trail overlay
+    const ant=document.createElementNS("http://www.w3.org/2000/svg","path");
+    ant.setAttribute("d",d); ant.setAttribute("fill","none"); ant.setAttribute("stroke","#6272a4"); ant.setAttribute("stroke-width","2");
+    ant.setAttribute("stroke-dasharray","6 8"); ant.setAttribute("stroke-linecap","round");
+    ant.style.animation="antMarch 1.2s linear infinite";
+    edgeGroup.appendChild(ant);
+    // wide invisible hit area
+    const hit=document.createElementNS("http://www.w3.org/2000/svg","path");
+    hit.setAttribute("d",d); hit.setAttribute("fill","none"); hit.setAttribute("stroke","transparent"); hit.setAttribute("stroke-width","18"); hit.style.cursor="pointer"; hit.classList.add("edge-hit");
+    hit.addEventListener("mouseenter",()=>{ p.setAttribute("stroke","#4a2020"); ant.setAttribute("stroke","#e05c5c"); ant.setAttribute("stroke-width","3"); });
+    hit.addEventListener("mouseleave",()=>{ p.setAttribute("stroke","#2a3248"); ant.setAttribute("stroke","#6272a4"); ant.setAttribute("stroke-width","2"); });
+    (idx=>{ hit.addEventListener("click",(ev)=>{ ev.stopPropagation(); pushUndo(); state.edges.splice(idx,1); drawEdges(); persist(); }); })(i);
+    edgeGroup.appendChild(hit);
+  }
+}
+
+/* ---------- view ---------- */
+function applyView(){
+  world.style.transform = `translate(${state.view.x}px,${state.view.y}px) scale(${state.view.scale})`;
+  drawEdges();
+  document.getElementById("zoomReset").textContent = Math.round(state.view.scale*100)+"%";
+}
+
+/* ---------- interactions ---------- */
+let drag=null, connectDrag=null, panning=null;
+function escHtml(t){ return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function parasToHtml(text){ return text.split(/\n\n+/).map(p=>p.trim()).filter(Boolean).map(p=>`<p>${escHtml(p)}</p>`).join(""); }
+function positionTooltip(){}
+function attachNodeEvents(el){
+  const id = el.id;
+  el.addEventListener("mousedown",(ev)=>{
+    if(el.getAttribute("contenteditable")==="true") return;
+    if(ev.target.classList.contains("port")){ ev.stopPropagation(); const c=nodeCenter(id); connectDrag={from:id,x:c.x,y:c.y}; return; }
+    ev.stopPropagation();
+    if(ev.shiftKey){ toggleSel(id); }
+    else if(!state.sel.has(id)){ selectOnly(id); }
+    else { state.primary=id; refreshSelUI(); }
+    const n=state.nodes[id], start=screenToWorld(ev.clientX,ev.clientY);
+    drag={id,dx:start.x-n.x,dy:start.y-n.y,_snapBefore:snapshotMap()}; el.classList.add("dragging");
+  });
+  el.addEventListener("dblclick",(ev)=>{ ev.stopPropagation();
+    const n=state.nodes[id];
+    if(n.nodeType==="character") openCharacterInterview(id);
+    else if(n.nodeType==="research"||n.nodeType==="research-data") openResearchView(id);
+    else openSculpt(id);
+  });
+
+  // Paragraph hover tooltip
+  const tooltip = document.getElementById("para-tooltip");
+  el.addEventListener("mouseenter",()=>{
+    const n = state.nodes[id];
+    const content = n?.nodeType==="note" ? n.noteText : n?.paragraph;
+    if(!n || !content) return;
+    tooltip.innerHTML = n.nodeType==="note" ? parasToHtml(content) : (n._paraHighlighted || parasToHtml(content));
+    tooltip.classList.add("visible");
+  });
+  el.addEventListener("mouseleave",(ev)=>{ if(ev.relatedTarget===tooltip||tooltip.contains(ev.relatedTarget)) return; tooltip.classList.remove("visible"); });
+  tooltip.addEventListener("mouseleave",(ev)=>{ if(!ev.relatedTarget||(!ev.relatedTarget.closest(".node"))) tooltip.classList.remove("visible"); });
+}
+function quickEdit(el, _noUndo=false){
+  const id=el.id, labelEl=el.querySelector(".label");
+  if(!_noUndo) pushUndo();
+  el.setAttribute("contenteditable","true"); el.focus();
+  const r=document.createRange(); r.selectNodeContents(labelEl);
+  const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  function finish(){
+    el.removeAttribute("contenteditable");
+    const txt=labelEl.textContent.trim()||"Untitled"; labelEl.textContent=txt;
+    state.nodes[id].text=txt;
+    el.removeEventListener("blur",finish); el.removeEventListener("keydown",keyer);
+    drawEdges(); persist();
+  }
+  function keyer(e){ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();el.blur();} if(e.key==="Escape")el.blur(); e.stopPropagation(); }
+  el.addEventListener("blur",finish); el.addEventListener("keydown",keyer);
+}
+let lassoDrag=null;
+const lassoEl=document.getElementById("lasso");
+
+function lassoHitTest(x1,y1,x2,y2){
+  const rx=Math.min(x1,x2), ry=Math.min(y1,y2), rw=Math.abs(x2-x1), rh=Math.abs(y2-y1);
+  return Object.keys(state.nodes).filter(id=>{
+    const n=state.nodes[id], el=document.getElementById(id);
+    const w=el?el.offsetWidth:100, h=el?el.offsetHeight:40;
+    // node rect in world coords
+    const nx=n.x, ny=n.y, nx2=n.x+w, ny2=n.y+h;
+    return nx<rx+rw && nx2>rx && ny<ry+rh && ny2>ry;
+  });
+}
+
+window.addEventListener("mousemove",(ev)=>{
+  if(drag){
+    const p=screenToWorld(ev.clientX,ev.clientY), n=state.nodes[drag.id];
+    n.x=p.x-drag.dx; n.y=p.y-drag.dy; renderNode(drag.id); drawEdges();
+  } else if(connectDrag){
+    const p=screenToWorld(ev.clientX,ev.clientY), a=nodeCenter(connectDrag.from);
+    edgeGroup.querySelectorAll(".temp").forEach(x=>x.remove());
+    const mx=(a.x+p.x)/2, path=document.createElementNS("http://www.w3.org/2000/svg","path");
+    path.setAttribute("class","temp");
+    path.setAttribute("d",`M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${p.y}, ${p.x} ${p.y}`);
+    path.setAttribute("fill","none"); path.setAttribute("stroke","#7af0c0"); path.setAttribute("stroke-width","2"); path.setAttribute("stroke-dasharray","5 4");
+    edgeGroup.appendChild(path);
+  } else if(lassoDrag){
+    const cx=ev.clientX, cy=ev.clientY;
+    const x=Math.min(cx,lassoDrag.sx), y=Math.min(cy,lassoDrag.sy);
+    const w=Math.abs(cx-lassoDrag.sx), h=Math.abs(cy-lassoDrag.sy);
+    lassoEl.style.left=x+"px"; lassoEl.style.top=y+"px";
+    lassoEl.style.width=w+"px"; lassoEl.style.height=h+"px";
+    // world coords of lasso corners
+    const p1=screenToWorld(lassoDrag.sx,lassoDrag.sy), p2=screenToWorld(cx,cy);
+    const hits=lassoHitTest(p1.x,p1.y,p2.x,p2.y);
+    // preview: highlight hit nodes without committing
+    Object.keys(state.nodes).forEach(id=>{
+      const el=document.getElementById(id); if(!el) return;
+      const inLasso=hits.includes(id);
+      const alreadySel=lassoDrag.additive?state.sel.has(id):false;
+      el.classList.toggle("selected", inLasso||alreadySel);
+    });
+  } else if(panning){
+    const dx=ev.clientX-panning.sx, dy=ev.clientY-panning.sy;
+    if(Math.abs(dx)>3||Math.abs(dy)>3) panning.moved=true;
+    state.view.x=panning.vx+dx; state.view.y=panning.vy+dy; applyView();
+  }
+});
+window.addEventListener("mouseup",(ev)=>{
+  if(drag){ const el=document.getElementById(drag.id); if(el)el.classList.remove("dragging"); if(drag._snapBefore){ undoStack.push(drag._snapBefore); if(undoStack.length>UNDO_MAX) undoStack.shift(); redoStack=[]; refreshUndoUI(); } drag=null; persist(); }
+  if(connectDrag){
+    const t=ev.target.closest(".node");
+    if(t && t.id!==connectDrag.from) addEdge(connectDrag.from,t.id);
+    edgeGroup.querySelectorAll(".temp").forEach(x=>x.remove()); connectDrag=null;
+  }
+  if(lassoDrag){
+    lassoEl.style.display="none";
+    const p1=screenToWorld(lassoDrag.sx,lassoDrag.sy), p2=screenToWorld(ev.clientX,ev.clientY);
+    const hits=lassoHitTest(p1.x,p1.y,p2.x,p2.y);
+    if(!lassoDrag.additive) { state.sel.clear(); state.primary=null; }
+    hits.forEach(id=>{ state.sel.add(id); state.primary=id; const el=document.getElementById(id); if(el)el.classList.add("selected"); });
+    refreshSelUI(); lassoDrag=null;
+  }
+  if(panning){ if(!panning.moved) clearSel(); canvas.classList.remove("panning"); panning=null; }
+
+});
+canvas.addEventListener("mousedown",(ev)=>{
+  if(ev.target===canvas||ev.target===world||ev.target.id==="edges"){
+    if(ev.ctrlKey||ev.metaKey){
+      // lasso mode
+      ev.preventDefault();
+      lassoDrag={ sx:ev.clientX, sy:ev.clientY, additive:ev.shiftKey };
+      lassoEl.style.left=ev.clientX+"px"; lassoEl.style.top=ev.clientY+"px";
+      lassoEl.style.width="0px"; lassoEl.style.height="0px";
+      lassoEl.style.display="block";
+      if(!ev.shiftKey) clearSel();
+    } else {
+      panning={sx:ev.clientX,sy:ev.clientY,vx:state.view.x,vy:state.view.y,moved:false}; canvas.classList.add("panning");
+    }
+  }
+});
+canvas.addEventListener("dblclick",(ev)=>{
+  if(ev.target===canvas||ev.target===world||ev.target.id==="edges"){
+    const p=screenToWorld(ev.clientX,ev.clientY);
+    const id=createNode({text:"New idea",x:p.x-50,y:p.y-20}); selectOnly(id);
+    setTimeout(()=>quickEdit(document.getElementById(id),true),0);
+  }
+});
+canvas.addEventListener("wheel",(ev)=>{
+  ev.preventDefault();
+  const f=ev.deltaY<0?1.1:0.9, ns=Math.min(2.5,Math.max(0.3,state.view.scale*f)), mx=ev.clientX, my=ev.clientY;
+  state.view.x=mx-(mx-state.view.x)*(ns/state.view.scale); state.view.y=my-(my-state.view.y)*(ns/state.view.scale);
+  state.view.scale=ns; applyView();
+},{passive:false});
+
+/* ---------- toolbar ---------- */
+document.getElementById("addBtn").onclick=()=>{
+  const p=screenToWorld(window.innerWidth/2,window.innerHeight/2);
+  const id=createNode({text:"New idea",x:p.x-50,y:p.y-20}); selectOnly(id);
+  setTimeout(()=>quickEdit(document.getElementById(id),true),0);
+};
+document.getElementById("sculptBtn").onclick=()=>{ if(state.primary) openSculpt(state.primary); };
+document.getElementById("deleteBtn").onclick=()=>{ pushUndo(); [...state.sel].forEach(id=>removeNode(id,true)); };
+document.getElementById("selectAllBtn").onclick=()=>{ clearSel(); Object.keys(state.nodes).forEach(id=>{state.sel.add(id);const e=document.getElementById(id);if(e)e.classList.add("selected");}); state.primary=Object.keys(state.nodes)[0]||null; refreshSelUI(); };
+document.getElementById("projectsBtn").onclick=()=>{ persist(); openHome(); };
+document.getElementById("saveBtn").onclick=()=>{
+  const proj=currentProject();
+  const blob=new Blob([JSON.stringify({project:{name:proj?.name,brief:proj?.brief},nodes:state.nodes,edges:state.edges,seq:state.seq},null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=((proj?.name)||"idea-sculpture").replace(/[^a-z0-9]+/gi,"-").toLowerCase()+".json"; a.click();
+};
+document.getElementById("loadBtn").onclick=()=>document.getElementById("fileInput").click();
+document.getElementById("fileInput").onchange=(e)=>{
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader(); r.onload=()=>{ try{
+    const d=JSON.parse(r.result); loadMap(d);
+    if(d.project&&currentProject()){ if(d.project.brief&&!currentProject().brief) currentProject().brief=d.project.brief; }
+    persist();
+  }catch{ alert("Could not read that file."); } };
+  r.readAsText(f); e.target.value="";
+};
+function zoomBy(f){
+  const cx=window.innerWidth/2, cy=window.innerHeight/2, ns=Math.min(2.5,Math.max(0.3,state.view.scale*f));
+  state.view.x=cx-(cx-state.view.x)*(ns/state.view.scale); state.view.y=cy-(cy-state.view.y)*(ns/state.view.scale);
+  state.view.scale=ns; applyView();
+}
+document.getElementById("zoomIn").onclick=()=>zoomBy(1.15);
+document.getElementById("zoomOut").onclick=()=>zoomBy(0.87);
+document.getElementById("zoomReset").onclick=()=>{ state.view={x:0,y:0,scale:1}; applyView(); };
+
+/* ---------- keyboard ---------- */
+window.addEventListener("keydown",(e)=>{
+  if(home.classList.contains("open")) return;
+  if(document.querySelector(".overlay.open")) return;
+  // undo/redo — always available (even in contenteditable)
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key==="z"){ e.preventDefault(); undo(); return; }
+  if((e.ctrlKey||e.metaKey)&&(e.key==="y"||(e.shiftKey&&e.key==="z"))){ e.preventDefault(); redo(); return; }
+  if(document.querySelector('.node[contenteditable="true"]')) return;
+  if((e.ctrlKey||e.metaKey)&&e.key==="d"&&state.sel.size){ e.preventDefault();
+    pushUndo();
+    const idMap={};
+    const selected=[...state.sel];
+    selected.forEach(id=>{
+      const n=state.nodes[id];
+      const nid=uid();
+      state.nodes[nid]={...n, id:nid, x:n.x+30, y:n.y+30, root:false};
+      idMap[id]=nid;
+      renderNode(nid);
+    });
+    // duplicate edges that exist between selected nodes
+    state.edges.forEach(e=>{
+      if(idMap[e.from]&&idMap[e.to]) addEdge(idMap[e.from],idMap[e.to],true);
+    });
+    // select the new nodes
+    clearSel();
+    Object.values(idMap).forEach(nid=>{ state.sel.add(nid); state.primary=nid; document.getElementById(nid)?.classList.add("selected"); });
+    refreshSelUI(); drawEdges(); persist();
+    return;
+  }
+  if((e.key==="Delete"||e.key==="Backspace")&&state.sel.size){ e.preventDefault(); pushUndo(); [...state.sel].forEach(id=>removeNode(id,true)); }
+  if(e.key==="Tab"&&state.primary){
+    e.preventDefault();
+    const parent=state.nodes[state.primary];
+    const id=createNode({text:"New idea",x:parent.x+190,y:parent.y+Math.random()*80-40});
+    addEdge(state.primary,id,true); selectOnly(id);
+    setTimeout(()=>quickEdit(document.getElementById(id),true),0);
+  }
+});
+document.getElementById("undoBtn").onclick=undo;
+document.getElementById("redoBtn").onclick=redo;
+
+/* ---------- context for AI (project -> macro -> micro) ---------- */
+function projectContext(){
+  const p=currentProject(); if(!p) return "";
+  let s='PROJECT: "'+p.name+'"';
+  if(p.brief) s+="\nPROJECT BRIEF: "+p.brief;
+  return s;
+}
+function ancestorContext(id){
+  const parts=[]; const pc=projectContext(); if(pc) parts.push(pc);
+  const root=Object.values(state.nodes).find(n=>n.root);
+
+  // BFS over ALL ancestors — collect every connected parent node recursively
+  const seen=new Set([id]);
+  const queue=[...state.edges.filter(e=>e.to===id).map(e=>e.from)];
+  const ancestors=[]; // ordered: closest first
+  while(queue.length){
+    const nid=queue.shift();
+    if(seen.has(nid)) continue;
+    seen.add(nid);
+    const n=state.nodes[nid]; if(!n) continue;
+    ancestors.push(n);
+    // enqueue this node's parents too
+    state.edges.filter(e=>e.to===nid).forEach(e=>{ if(!seen.has(e.from)) queue.push(e.from); });
+  }
+
+  // root node first if not already in ancestors
+  if(root && root.id!==id){
+    const rootInAncestors=ancestors.find(n=>n.id===root.id);
+    if(!rootInAncestors){
+      parts.push(nodeContextLine("ROOT NODE", root));
+    }
+  }
+
+  // all ancestors with full context
+  ancestors.forEach(n=>{
+    const isRoot=root&&n.id===root.id;
+    const label=isRoot?"ROOT NODE":"CONNECTED NODE";
+    parts.push(nodeContextLine(label, n));
+  });
+
+  return parts.join("\n");
+}
+
+function nodeContextLine(label, n){
+  let line=`${label}: ${n.text}`;
+  // Idea node fields
+  if(n.desire||n.resistance||n.change){
+    const drc=[];
+    if(n.desire) drc.push("desire: "+n.desire);
+    if(n.resistance) drc.push("resistance: "+n.resistance);
+    if(n.change) drc.push("change: "+n.change);
+    line+="\n  ("+drc.join(" | ")+")";
+  }
+  if(n.paragraph) line+="\n  "+n.paragraph;
+  // Essence node fields
+  if(n.essenceData){
+    const ed=n.essenceData;
+    const steps=[];
+    if(ed.e1) steps.push("what happens: "+ed.e1);
+    if(ed.e2) steps.push("why: "+ed.e2);
+    if(ed.e3) steps.push("really about: "+ed.e3);
+    if(ed.e4) steps.push("human truth: "+ed.e4);
+    if(ed.e5) steps.push("expression: "+ed.e5);
+    if(ed.f1) steps.push("simpler: "+ed.f1);
+    if(ed.f2) steps.push("truthful: "+ed.f2);
+    if(ed.f3) steps.push("surprising: "+ed.f3);
+    if(steps.length) line+="\n  [essence ladder: "+steps.join(" | ")+"]";
+  }
+  // Note node
+  if(n.noteText) line+="\n  "+n.noteText;
+  // Prompt node
+  if(n.promptText) line+="\n  [prompt: "+n.promptText+"]";
+  // Research node
+  if(n.researchData){
+    const rd=n.researchData;
+    const entries=[];
+    if(rd.subject) entries.push("subject: "+rd.subject);
+    const lists={behaviors:"behaviors",contradictions:"contradictions",rituals:"rituals",fears:"fears",strangeTruths:"strange truths"};
+    Object.entries(lists).forEach(([k,label])=>{
+      if(rd[k]&&rd[k].length) entries.push(label+": "+rd[k].slice(0,4).join(" / "));
+    });
+    if(rd.languageNotes&&rd.languageNotes!=="none") entries.push("language notes: "+rd.languageNotes);
+    if(entries.length) line+="\n  [research — "+entries.join(" | ")+"]";
+  }
+  // Character node
+  if(n.characterData){
+    const cd=n.characterData;
+    const cf=[];
+    if(cd.contradiction) cf.push("contradiction: "+cd.contradiction);
+    if(cd.goal) cf.push("goal: "+cd.goal);
+    if(cd.fear) cf.push("fear: "+cd.fear);
+    if(cd.secret) cf.push("secret: "+cd.secret);
+    if(cd.speechPattern) cf.push("speech: "+cd.speechPattern);
+    if(cf.length) line+="\n  [character — "+cf.join(" | ")+"]";
+  }
+  return line;
+}
+
+/* ---------- Claude API ---------- */
+function requireKey(){
+  const provider=cfg.provider||"claude";
+  const keyMap={claude:cfg.claudeKey||cfg.apiKey,openai:cfg.openaiKey,gemini:cfg.geminiKey};
+  const names={claude:"Claude",openai:"OpenAI",gemini:"Gemini"};
+  if(!keyMap[provider]){ alert("Add a "+names[provider]+" API key in Settings first."); document.getElementById("settingsBtn").click(); return false; }
+  return true;
+}
+async function callClaude(system,user,maxTokens=600){
+  const provider=cfg.provider||"claude";
+  if(provider==="openai") return _callOpenAI(system,user,maxTokens);
+  if(provider==="gemini") return _callGemini(system,user,maxTokens);
+  return _callAnthropicDirect(system,user,maxTokens);
+}
+async function _callAnthropicDirect(system,user,maxTokens,modelOverride){
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"content-type":"application/json","x-api-key":cfg.claudeKey||cfg.apiKey||"","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:modelOverride||cfg.claudeModel||cfg.model||"claude-sonnet-4-6",max_tokens:maxTokens,system,messages:[{role:"user",content:user}]})
+  });
+  if(!res.ok){let m=res.status+" "+res.statusText;try{const j=await res.json();if(j.error?.message)m=j.error.message;}catch{}throw new Error(m);}
+  const data=await res.json();
+  return (data.content||[]).map(c=>c.text||"").join("").trim();
+}
+async function _callOpenAI(system,user,maxTokens,modelOverride){
+  const model=modelOverride||cfg.openaiModel||"gpt-5.5";
+  const body={model,messages:[{role:"system",content:system},{role:"user",content:user}]};
+  // GPT-5 family are reasoning models: their completion budget is shared with hidden
+  // reasoning tokens, so a small cap returns empty content. Give big headroom and
+  // keep reasoning light so visible output actually gets produced.
+  if(/^(gpt-5|o\d)/.test(model)){
+    body.max_completion_tokens=Math.max(maxTokens,4000);
+    body.reasoning_effort="low";
+  } else {
+    body.max_tokens=maxTokens;
+  }
+  const res=await fetch("https://api.openai.com/v1/chat/completions",{
+    method:"POST",
+    headers:{"content-type":"application/json","authorization":"Bearer "+(cfg.openaiKey||"")},
+    body:JSON.stringify(body)
+  });
+  if(!res.ok){let m=res.status+" "+res.statusText;try{const j=await res.json();if(j.error?.message)m=j.error.message;}catch{}throw new Error(m);}
+  const data=await res.json();
+  const choice=(data.choices||[])[0]||{};
+  const text=(choice.message?.content||"").trim();
+  if(!text){
+    const fr=choice.finish_reason||"unknown";
+    const rt=data.usage?.completion_tokens_details?.reasoning_tokens;
+    throw new Error(`OpenAI returned empty content (finish_reason: ${fr}${rt?", reasoning_tokens: "+rt:""}). The model may be unavailable on your key — try a different model.`);
+  }
+  return text;
+}
+async function _callGemini(system,user,maxTokens,modelOverride){
+  const model=modelOverride||cfg.geminiModel||"gemini-3.5-flash";
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cfg.geminiKey||""}`,{
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({
+      system_instruction:{parts:[{text:system}]},
+      contents:[{role:"user",parts:[{text:user}]}],
+      generationConfig:{maxOutputTokens:maxTokens}
+    })
+  });
+  if(!res.ok){let m=res.status+" "+res.statusText;try{const j=await res.json();if(j.error?.message)m=j.error.message;}catch{}throw new Error(m);}
+  const data=await res.json();
+  return ((data.candidates||[])[0]?.content?.parts||[]).map(p=>p.text||"").join("").trim();
+}
+
+/* ---------- Chat: multi-turn streaming ---------- */
+async function _apiErrMsg(res){let m=res.status+" "+res.statusText;try{const j=await res.json();if(j.error?.message)m=j.error.message;}catch{}return m;}
+async function _readSSE(res,onEvent){
+  if(!res.body) throw new Error("Streaming not supported by this response.");
+  const reader=res.body.getReader(); const dec=new TextDecoder(); let buf="";
+  while(true){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    let idx;
+    while((idx=buf.indexOf("\n"))>=0){
+      const line=buf.slice(0,idx).trim(); buf=buf.slice(idx+1);
+      if(line.startsWith("data:")) onEvent(line.slice(5).trim());
+    }
+  }
+  const last=buf.trim();
+  if(last.startsWith("data:")) onEvent(last.slice(5).trim());
+}
+async function callAIChat(toolId, messages, systemPrompt, onDelta, signal){
+  const {provider,model}=getToolModel(toolId);
+  const keyMap={claude:cfg.claudeKey||cfg.apiKey,openai:cfg.openaiKey,gemini:cfg.geminiKey};
+  const names={claude:"Claude",openai:"OpenAI",gemini:"Gemini"};
+  if(!keyMap[provider]){alert("Add a "+names[provider]+" API key in Settings first.");document.getElementById("settingsBtn").click();throw new Error("No API key for "+provider);}
+  if(provider==="openai") return _chatOpenAI(systemPrompt,messages,model,onDelta,signal);
+  if(provider==="gemini") return _chatGemini(systemPrompt,messages,model,onDelta,signal);
+  return _chatAnthropic(systemPrompt,messages,model,onDelta,signal);
+}
+async function _chatAnthropic(system,messages,model,onDelta,signal){
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",signal,
+    headers:{"content-type":"application/json","x-api-key":cfg.claudeKey||cfg.apiKey||"","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:model||cfg.claudeModel||"claude-sonnet-4-6",max_tokens:4000,system,messages,stream:true})
+  });
+  if(!res.ok) throw new Error(await _apiErrMsg(res));
+  let full="";
+  await _readSSE(res,(d)=>{ try{const j=JSON.parse(d); if(j.type==="content_block_delta"&&j.delta?.text){full+=j.delta.text;onDelta(j.delta.text);}}catch{} });
+  return full;
+}
+async function _chatOpenAI(system,messages,model,onDelta,signal){
+  model=model||cfg.openaiModel||"gpt-5.5";
+  const body={model,messages:[{role:"system",content:system},...messages],stream:true};
+  if(/^(gpt-5|o\d)/.test(model)){ body.max_completion_tokens=4000; body.reasoning_effort="low"; }
+  else { body.max_tokens=2000; }
+  const res=await fetch("https://api.openai.com/v1/chat/completions",{
+    method:"POST",signal,
+    headers:{"content-type":"application/json","authorization":"Bearer "+(cfg.openaiKey||"")},
+    body:JSON.stringify(body)
+  });
+  if(!res.ok) throw new Error(await _apiErrMsg(res));
+  let full="";
+  await _readSSE(res,(d)=>{ if(d==="[DONE]")return; try{const j=JSON.parse(d); const t=j.choices?.[0]?.delta?.content; if(t){full+=t;onDelta(t);}}catch{} });
+  return full;
+}
+async function _chatGemini(system,messages,model,onDelta,signal){
+  model=model||cfg.geminiModel||"gemini-3.5-flash";
+  const contents=messages.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}));
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${cfg.geminiKey||""}`,{
+    method:"POST",signal,
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({system_instruction:{parts:[{text:system}]},contents,generationConfig:{maxOutputTokens:4000}})
+  });
+  if(!res.ok) throw new Error(await _apiErrMsg(res));
+  let full="";
+  await _readSSE(res,(d)=>{ try{const j=JSON.parse(d); (j.candidates?.[0]?.content?.parts||[]).forEach(p=>{if(p.text){full+=p.text;onDelta(p.text);}});}catch{} });
+  return full;
+}
+
+function parseJSON(text){
+  let t=text.replace(/^```(?:json)?/i,"").replace(/```$/,"").trim();
+  try{ return JSON.parse(t); }catch{}
+  const m=t.match(/[\[{][\s\S]*[\]}]/); if(m) return JSON.parse(m[0]);
+  throw new Error("Unexpected AI response: "+text.slice(0,140));
+}
+
+/* ================= PER-TOOL MODEL CONFIG ================= */
+const PROVIDER_MODELS_MAP={
+  claude:[
+    {value:"claude-opus-4-8",label:"Opus 4.8 — best"},
+    {value:"claude-sonnet-4-6",label:"Sonnet 4.6 — balanced"},
+    {value:"claude-haiku-4-5-20251001",label:"Haiku 4.5 — fast"}
+  ],
+  openai:[
+    {value:"gpt-5.5",label:"GPT-5.5 — best"},
+    {value:"gpt-5",label:"GPT-5 — balanced"},
+    {value:"o3",label:"o3 — reasoning"}
+  ],
+  gemini:[
+    {value:"gemini-3.5-flash",label:"Flash 3.5 — fast"},
+    {value:"gemini-2.5-pro",label:"Pro 2.5 — best"},
+    {value:"gemini-2.5-flash",label:"Flash 2.5 — balanced"}
+  ]
+};
+const PROVIDER_ICONS_MAP={claude:"✦",openai:"◆",gemini:"◈"};
+const PROVIDER_COLORS_MAP={claude:"var(--accent)",openai:"#10a37f",gemini:"#4285f4"};
+
+function getToolModel(toolId){
+  const saved=(cfg.toolModels||{})[toolId];
+  if(saved&&saved.provider&&saved.model) return saved;
+  const provider=cfg.provider||"claude";
+  return {provider, model:{
+    claude:cfg.claudeModel||cfg.model||"claude-sonnet-4-6",
+    openai:cfg.openaiModel||"gpt-5.5",
+    gemini:cfg.geminiModel||"gemini-3.5-flash"
+  }[provider]||"claude-sonnet-4-6"};
+}
+
+function setToolModel(toolId,provider,model){
+  if(!cfg.toolModels) cfg.toolModels={};
+  cfg.toolModels[toolId]={provider,model};
+  saveCfg(cfg);
+}
+
+function buildModelPicker(toolId, compact=false){
+  const {provider,model}=getToolModel(toolId);
+  const wrap=document.createElement("div");
+  wrap.className=compact?"toolbar-model-bar":"tool-model-bar";
+
+  const icon=document.createElement("span");
+  icon.className="tmb-icon";
+  icon.textContent=PROVIDER_ICONS_MAP[provider]||"✦";
+  icon.style.color=PROVIDER_COLORS_MAP[provider]||"var(--accent)";
+
+  if(!compact){
+    const lbl=document.createElement("span");
+    lbl.className="tmb-label"; lbl.textContent="MODEL";
+    wrap.appendChild(lbl);
+  }
+
+  const provSel=document.createElement("select");
+  provSel.className="tmb-sel tmb-provider";
+  ["claude","openai","gemini"].forEach(p=>{
+    const opt=document.createElement("option");
+    opt.value=p; opt.textContent={claude:"Claude",openai:"OpenAI",gemini:"Gemini"}[p];
+    opt.selected=p===provider;
+    provSel.appendChild(opt);
+  });
+
+  const mdlSel=document.createElement("select");
+  mdlSel.className="tmb-sel tmb-model";
+
+  function populateMdl(prov,currentMdl){
+    mdlSel.innerHTML="";
+    (PROVIDER_MODELS_MAP[prov]||[]).forEach(m=>{
+      const opt=document.createElement("option");
+      opt.value=m.value; opt.textContent=m.label;
+      opt.selected=m.value===currentMdl;
+      mdlSel.appendChild(opt);
+    });
+    icon.textContent=PROVIDER_ICONS_MAP[prov]||"✦";
+    icon.style.color=PROVIDER_COLORS_MAP[prov]||"var(--accent)";
+  }
+  populateMdl(provider,model);
+
+  provSel.onchange=()=>{
+    const np=provSel.value;
+    const defMdl={claude:cfg.claudeModel||"claude-sonnet-4-6",openai:cfg.openaiModel||"gpt-5.5",gemini:cfg.geminiModel||"gemini-3.5-flash"}[np];
+    populateMdl(np,defMdl);
+    setToolModel(toolId,np,mdlSel.value);
+  };
+  mdlSel.onchange=()=>setToolModel(toolId,provSel.value,mdlSel.value);
+
+  wrap.appendChild(icon);
+  wrap.appendChild(provSel);
+  wrap.appendChild(mdlSel);
+  return wrap;
+}
+
+/* callAI — routes to the right provider+model for a given tool, injects context */
+async function callAI(toolId,system,user,maxTokens=600,isGeneration=false){
+  const ctx=getContextBlock(isGeneration);
+  const sys=ctx?system+ctx:system;
+  const {provider,model}=getToolModel(toolId);
+  const keyMap={claude:cfg.claudeKey||cfg.apiKey,openai:cfg.openaiKey,gemini:cfg.geminiKey};
+  const names={claude:"Claude",openai:"OpenAI",gemini:"Gemini"};
+  if(!keyMap[provider]){alert("Add a "+names[provider]+" API key in Settings first (needed for "+toolId+").");document.getElementById("settingsBtn").click();throw new Error("No API key for "+provider);}
+  if(provider==="openai") return _callOpenAI(sys,user,maxTokens,model);
+  if(provider==="gemini") return _callGemini(sys,user,maxTokens,model);
+  return _callAnthropicDirect(sys,user,maxTokens,model);
+}
+
+/* ---------- Expand ---------- */
+(function(){
+  const bar=document.getElementById("expandModelBar");
+  bar.appendChild(buildModelPicker("expand",true));
+})();
+document.getElementById("aiBtn").onclick=async ()=>{
+  if(!state.primary) return;
+  const node=state.nodes[state.primary], el=document.getElementById(node.id);
+  el.classList.add("busy"); document.getElementById("aiBtn").disabled=true;
+  try{
+    const ctx=ancestorContext(node.id);
+    const sys="You are a mind-mapping assistant. Propose concise sub-ideas branching from a node, consistent with the project brief. Each is a short phrase (2-6 words), specific and non-redundant. Respond ONLY with a JSON array of strings.";
+    const usr=(ctx?ctx+"\n\n":"")+`Expand this node into 4 sub-ideas: "${node.text}". Return a JSON array of 4 short strings.`;
+    const ideas=parseJSON(await callAI("expand",sys,usr,400)).filter(x=>typeof x==="string").slice(0,4);
+    placeChildren(node.id,ideas);
+  }catch(err){ alert("AI request failed: "+err.message); }
+  finally{ el.classList.remove("busy"); document.getElementById("aiBtn").disabled=!state.primary; }
+};
+function placeChildren(parentId,ideas){
+  pushUndo();
+  const pc=nodeCenter(parentId), count=ideas.length, radius=210, spread=Math.PI*1.1, start=-spread/2;
+  ideas.forEach((text,i)=>{
+    const ang=count===1?0:start+spread*i/(count-1);
+    const x=pc.x+Math.cos(ang)*radius-50, y=pc.y+Math.sin(ang)*radius-20;
+    const id=createNode({text,x,y,_noUndo:true}); addEdge(parentId,id,true);
+  });
+  drawEdges(); persist();
+}
+
+/* ================= SCULPT ================= */
+const sculptOverlay=document.getElementById("sculptOverlay");
+let sculptId=null;
+let sculptDraft={};
+const FIELD_META={ desire:"the desire (what is wanted, pursued, or at stake)", resistance:"the resistance (what opposes, blocks, or complicates the desire)", change:"the change (the shift, turn, or resolution that results)" };
+function setSculptType(type){
+  const isNote=type==="note", isEssence=type==="essence", isPrompt=type==="prompt", isChat=type==="chat";
+  document.getElementById("scChatPanel").style.display = isChat ? "flex" : "none";
+  document.getElementById("scNotePanel").style.display = isNote ? "block" : "none";
+  document.getElementById("scIdeaPanel").style.display = (isNote||isChat) ? "none" : "grid";
+  document.getElementById("scIdeaLeft").style.display    = (isNote||isEssence||isPrompt) ? "none" : "";
+  document.getElementById("scEssenceLeft").style.display = isEssence ? "" : "none";
+  document.getElementById("scPromptLeft").style.display  = isPrompt ? "" : "none";
+  document.getElementById("scNodeType").value = type;
+  if(isChat){
+    const cmb=document.getElementById("chatModelBar");
+    if(cmb){ cmb.innerHTML=""; cmb.appendChild(buildModelPicker("chat")); }
+  }
+  if(!isNote&&!isChat){
+    const pv=document.getElementById("scParaView");
+    if(pv.innerHTML.includes("Fill")||pv.innerHTML.includes("Type")){
+      pv.innerHTML = isEssence
+        ? "Fill the ladder, then generate a paragraph from the expression."
+        : isPrompt
+        ? "Type your prompt, then hit Generate."
+        : "Fill the three fields, then generate a paragraph that fuses them.";
+    }
+  }
+}
+function openSculpt(id){
+  sculptId=id; sculptDraft={}; const n=state.nodes[id];
+  document.getElementById("scTitle").value=n.text==="New idea"?"":n.text;
+  const type = n.nodeType==="note" ? "note" : n.nodeType==="chat" ? "chat" : n.nodeType==="essence" ? "essence" : n.nodeType==="prompt" ? "prompt" : "idea";
+  // Always clear essence + prompt fields so previous node's data doesn't bleed in
+  document.getElementById("scEssenceOutcome").value="";
+  ["e1","e2","e3","e4","e5","f1","f2","f3"].forEach(f=>{
+    const ta=sculptOverlay.querySelector(`textarea[data-efield="${f}"]`);
+    if(ta) ta.value="";
+  });
+  sculptOverlay.querySelectorAll("[data-esugg]").forEach(d=>d.innerHTML="");
+  document.getElementById("scFilterSugg").innerHTML="";
+  document.getElementById("scPromptText").value="";
+  setSculptType(type);
+  if(type==="chat"){
+    document.getElementById("scChatInput").value="";
+    document.getElementById("scChatStatus").textContent="";
+    renderChatMessages();
+  } else if(type==="note"){
+    document.getElementById("scNoteText").value=n.noteText||"";
+  } else if(type==="essence"){
+    const ed=n.essenceData||{};
+    document.getElementById("scEssenceOutcome").value=ed.outcome||"";
+    ["e1","e2","e3","e4","e5","f1","f2","f3"].forEach(f=>{
+      const ta=sculptOverlay.querySelector(`textarea[data-efield="${f}"]`);
+      if(ta) ta.value=ed[f]||"";
+    });
+    const pv=document.getElementById("scParaView");
+    if(n.paragraph){ pv.innerHTML=n._paraHighlighted||parasToHtml(n.paragraph); }
+    else{ pv.innerHTML="Fill the ladder, then generate a paragraph from the expression."; }
+  } else if(type==="prompt"){
+    document.getElementById("scPromptText").value=n.promptText||"";
+    const pv=document.getElementById("scParaView");
+    if(n.paragraph){ pv.innerHTML=n._paraHighlighted||parasToHtml(n.paragraph); }
+    else{ pv.innerHTML="Type your prompt, then hit Generate."; }
+  } else {
+    document.getElementById("scOutcome").value=n.outcome||"";
+    ["desire","resistance","change"].forEach(f=>{
+      sculptOverlay.querySelector(`textarea[data-field="${f}"]`).value=n[f]||"";
+      sculptOverlay.querySelector(`[data-sugg="${f}"]`).innerHTML="";
+    });
+    const pv=document.getElementById("scParaView");
+    if(n.paragraph){ pv.innerHTML=n._paraHighlighted||parasToHtml(n.paragraph); }
+    else{ pv.innerHTML="Fill the three fields, then generate a paragraph that fuses them."; }
+  }
+  const smb=document.getElementById("sculptModelBar");
+  if(smb){smb.innerHTML="";smb.appendChild(buildModelPicker("sculpt"));}
+  sculptOverlay.classList.add("open");
+}
+function closeSculpt(){ sculptOverlay.classList.remove("open"); sculptId=null; sculptDraft={}; }
+document.getElementById("scCancel").onclick=closeSculpt;
+document.getElementById("scNodeType").addEventListener("change",(e)=>{
+  if(!sculptId) return;
+  const t=e.target.value;
+  setSculptType(t);
+  state.nodes[sculptId].nodeType = t==="note" ? "note" : t==="chat" ? "chat" : t==="essence" ? "essence" : t==="prompt" ? "prompt" : undefined;
+  if(t==="chat") renderChatMessages();
+  renderNode(sculptId);
+});
+
+/* ---------- Chat node UI ---------- */
+function renderChatMessages(){
+  const box=document.getElementById("scChatMessages");
+  const n=sculptId&&state.nodes[sculptId];
+  const msgs=(n&&n.chatMessages)||[];
+  if(!msgs.length){
+    box.innerHTML='<div class="chat-empty">Start a conversation — this node remembers the whole thread.<br>Pick Claude, GPT, or Gemini in the model picker above.</div>';
+    return;
+  }
+  box.innerHTML="";
+  msgs.forEach(m=>{
+    const d=document.createElement("div");
+    d.className="chat-msg "+(m.role==="user"?"user":"assistant");
+    d.innerHTML='<span class="role-tag">'+(m.role==="user"?"You":"AI")+'</span>'+escHtml(m.content);
+    box.appendChild(d);
+  });
+  box.scrollTop=box.scrollHeight;
+}
+let chatAbort=null;
+function setChatSending(on){
+  const sendBtn=document.getElementById("scChatSend");
+  if(on){ sendBtn.textContent="■ Stop"; sendBtn.classList.add("stopping"); }
+  else { sendBtn.textContent="Send"; sendBtn.classList.remove("stopping"); }
+}
+function stopChat(){ if(chatAbort){ chatAbort.abort(); } }
+async function sendChat(){
+  if(!sculptId) return;
+  // If a stream is in flight, this click means "stop".
+  if(chatAbort){ stopChat(); return; }
+  const n=state.nodes[sculptId];
+  const input=document.getElementById("scChatInput");
+  const text=input.value.trim();
+  if(!text) return;
+  const status=document.getElementById("scChatStatus");
+  if(n.nodeType!=="chat"){ n.nodeType="chat"; }
+  if(!Array.isArray(n.chatMessages)) n.chatMessages=[];
+  n.chatMessages.push({role:"user",content:text});
+  input.value=""; input.style.height="auto";
+  renderChatMessages();
+  // system prompt (+ optional project/node context)
+  let system="You are a helpful, knowledgeable AI assistant having a natural conversation. Be clear and useful.";
+  if(document.getElementById("scChatCtx").checked){
+    const ctx=ancestorContext(n.id);
+    if(ctx) system+="\n\nThe user is working inside a creative writing project. Use the following as background context when relevant (don't recite it verbatim):\n"+ctx;
+  }
+  const box=document.getElementById("scChatMessages");
+  const bubble=document.createElement("div");
+  bubble.className="chat-msg assistant";
+  bubble.innerHTML='<span class="role-tag">AI</span><span class="stream"><span class="spinner"></span></span>';
+  box.appendChild(bubble); box.scrollTop=box.scrollHeight;
+  const streamEl=bubble.querySelector(".stream");
+  input.disabled=true; status.textContent="thinking…";
+  chatAbort=new AbortController(); setChatSending(true);
+  let acc="", stopped=false;
+  try{
+    const apiMsgs=n.chatMessages.map(m=>({role:m.role,content:m.content}));
+    const full=await callAIChat("chat",apiMsgs,system,(delta)=>{
+      acc+=delta; streamEl.textContent=acc; box.scrollTop=box.scrollHeight; status.textContent="";
+    },chatAbort.signal);
+    const finalText=((full||acc)||"").trim();
+    if(!finalText) throw new Error("Empty response — try a different model.");
+    n.chatMessages.push({role:"assistant",content:finalText});
+    n.paragraph=finalText; delete n._paraHighlighted; // canvas preview = latest reply
+    renderChatMessages(); renderNode(n.id); drawEdges(); persist();
+  }catch(err){
+    const aborted=err.name==="AbortError"||/abort/i.test(err.message||"");
+    if(aborted){
+      stopped=true;
+      const partial=acc.trim();
+      if(partial){
+        n.chatMessages.push({role:"assistant",content:partial});
+        n.paragraph=partial; delete n._paraHighlighted;
+        renderChatMessages(); renderNode(n.id); drawEdges(); persist();
+        status.textContent="stopped";
+      }else{
+        n.chatMessages.pop(); // drop the user turn that got no reply
+        renderChatMessages(); persist();
+        status.textContent="stopped";
+      }
+    }else{
+      streamEl.innerHTML='<span style="color:var(--danger)">'+escHtml(err.message)+'</span>';
+      status.textContent="failed";
+      persist();
+    }
+  }finally{
+    chatAbort=null; setChatSending(false); input.disabled=false; input.focus();
+  }
+}
+document.getElementById("scChatSend").onclick=sendChat;
+document.getElementById("scChatInput").addEventListener("keydown",(e)=>{
+  if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendChat(); }
+});
+document.getElementById("scChatInput").addEventListener("input",function(){
+  this.style.height="auto"; this.style.height=Math.min(this.scrollHeight,170)+"px";
+});
+document.getElementById("scChatClear").onclick=()=>{
+  if(!sculptId) return;
+  if(!confirm("Clear this conversation?")) return;
+  const n=state.nodes[sculptId];
+  n.chatMessages=[]; n.paragraph=""; delete n._paraHighlighted;
+  renderChatMessages(); renderNode(n.id); drawEdges(); persist();
+};
+// Save for note panel
+document.getElementById("scNoteSave").onclick=()=>{
+  if(!sculptId) return;
+  pushUndo();
+  const n=state.nodes[sculptId];
+  n.text=document.getElementById("scTitle").value.trim()||"Untitled";
+  n.nodeType="note";
+  n.noteText=document.getElementById("scNoteText").value;
+  renderNode(n.id); drawEdges(); persist(); closeSculpt();
+};
+document.getElementById("scTitle").addEventListener("input",(e)=>{
+  if(sculptId){ state.nodes[sculptId].text=e.target.value||"Untitled"; renderNode(sculptId); drawEdges(); persist(); }
+});
+function get(f){ return sculptOverlay.querySelector(`textarea[data-field="${f}"]`).value.trim(); }
+async function suggestField(field){
+  const btn=sculptOverlay.querySelector(`[data-suggest="${field}"]`);
+  const list=sculptOverlay.querySelector(`[data-sugg="${field}"]`);
+  btn.disabled=true; const old=btn.textContent; btn.textContent="…";
+  list.innerHTML='<div class="footer-note"><span class="spinner"></span> thinking…</div>';
+  try{
+    const n=state.nodes[sculptId];
+    const ctx=ancestorContext(n.id);
+    const cur={ desire:get("desire"), resistance:get("resistance"), change:get("change") };
+    let known="";
+    if(field!=="desire"&&cur.desire) known+="\nChosen DESIRE: "+cur.desire;
+    if(field==="change"&&cur.resistance) known+="\nChosen RESISTANCE: "+cur.resistance;
+    const sys="You help a creator sculpt one element of an idea using a Desire/Resistance/Change framework. Your suggestions must flow DIRECTLY from the specific filled fields shown — treat them as the primary material. Use the project brief and node context only for tone, setting, and names. Never ignore what's already written above. Suggestions must be concrete, specific, and feel like natural continuations of what's filled in. Each is a short phrase or one sentence. Respond ONLY with a JSON array of 4 strings.";
+    const usr=`${ctx?ctx+"\n":""}Node title: "${n.text}".${known}\n\nBased directly on the above filled fields, suggest 4 distinct options for ${FIELD_META[field]}. Each suggestion must clearly follow from what's already written. Return a JSON array of 4 strings.`;
+    const arr=parseJSON(await callAI("sculpt",sys,usr,400)).filter(x=>typeof x==="string").slice(0,4);
+    list.innerHTML="";
+    arr.forEach(s=>{
+      const d=document.createElement("div"); d.className="sugg"; d.textContent=s;
+      d.onclick=()=>{ sculptOverlay.querySelector(`textarea[data-field="${field}"]`).value=s; };
+      list.appendChild(d);
+    });
+  }catch(err){ list.innerHTML='<div class="footer-note" style="color:var(--danger)">'+err.message+'</div>'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+sculptOverlay.querySelectorAll("[data-suggest]").forEach(b=>b.onclick=()=>suggestField(b.dataset.suggest));
+sculptOverlay.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{ sculptOverlay.querySelector(`[data-sugg="${b.dataset.clear}"]`).innerHTML=""; });
+document.getElementById("scRandomAll").onclick=async ()=>{
+  if(document.getElementById("scNodeType").value==="essence"){
+    for(const f of ["e1","e2","e3","e4","e5"]) await suggestEssenceField(f);
+  } else {
+    for(const f of ["desire","resistance","change"]) await suggestField(f);
+  }
+};
+
+/* slider display */
+const scWC=document.getElementById("scWordCount"), scWCVal=document.getElementById("scWordCountVal");
+scWC.addEventListener("input",()=>{ scWCVal.textContent="~"+scWC.value+" words"; });
+
+/* highlight keywords */
+async function highlightPara(para){
+  try{
+    const sys=`You are a text annotation tool. Given prose, identify:
+- 2-4 "img" phrases: the most vivid, sensory, or striking images (max 4 words each)
+- 2-3 "turn" phrases: key dramatic beats, reversals, or character actions (max 4 words each)
+Phrases must be exact substrings of the text. Be selective — only the best ones. No overlap between categories.
+Return ONLY JSON: {"img":["..."],"turn":["..."]}`;
+    const result=parseJSON(await callAI("sculpt",sys,`TEXT:\n${para}`,1500));
+    let html=parasToHtml(para);
+    const apply=(phrases,cls)=>{
+      if(!Array.isArray(phrases)) return;
+      [...phrases].filter(k=>typeof k==="string"&&k.trim()).sort((a,b)=>b.length-a.length).forEach(kw=>{
+        const esc=kw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+        html=html.replace(new RegExp(`(?!<[^>]*)(${esc})(?![^<]*>)`,"g"),`<mark class="${cls}">$1</mark>`);
+      });
+    };
+    apply(result.img,"img");
+    apply(result.turn,"turn");
+    return html;
+  }catch{ return parasToHtml(para); }
+}
+
+/* ================= ESSENCE HELPERS ================= */
+const ESSENCE_META={
+  e1:"what happens — the surface event",
+  e2:"why it happens — the motivation behind the event",
+  e3:"what it's really about — the deeper theme",
+  e4:"what human truth is underneath — the universal truth",
+  e5:"the simplest possible expression of that truth — a scene, image, sound, or gesture"
+};
+function getE(f){ const ta=sculptOverlay.querySelector(`textarea[data-efield="${f}"]`); return ta?ta.value.trim():""; }
+async function suggestEssenceField(field){
+  const btn=sculptOverlay.querySelector(`[data-esuggest="${field}"]`);
+  const list=sculptOverlay.querySelector(`[data-esugg="${field}"]`);
+  if(!btn||!list) return;
+  btn.disabled=true; const old=btn.textContent; btn.textContent="…";
+  list.innerHTML='<div class="footer-note"><span class="spinner"></span> thinking…</div>';
+  try{
+    const n=state.nodes[sculptId];
+    const ctx=ancestorContext(n.id);
+    let known="";
+    if(field!=="e1"&&getE("e1")) known+="\n01 What happens: "+getE("e1");
+    if(["e3","e4","e5"].includes(field)&&getE("e2")) known+="\n02 Why: "+getE("e2");
+    if(["e4","e5"].includes(field)&&getE("e3")) known+="\n03 Really about: "+getE("e3");
+    if(field==="e5"&&getE("e4")) known+="\n04 Human truth: "+getE("e4");
+    let sys, usr;
+    if(field==="e5"){
+      sys=`You suggest concrete, observable expressions of a human truth. Each suggestion is a specific action, image, or behavior a camera can see — not an emotion, not a theme statement. Avoid the obvious. Prefer the surprising and specific over the generic. Example of bad: "they share a quiet moment". Example of good: "she fills his gas tank without telling him". Return ONLY a JSON array of 4 strings. No explanation. No markdown.`;
+      usr=`${ctx?ctx+"\n":""}Node: "${n.text}".${known}\n\nSuggest 4 specific, observable expressions of the human truth above. One concrete moment each. Return ONLY: ["...","...","...","..."]`;
+    } else if(field==="e4"){
+      sys=`You find the human truth hidden inside a specific situation. The truth must come FROM the details given — not invented from thin air. State it as one plain sentence that feels true for everyone. Avoid vague generalities. Bad: "People deal with hardship differently." Good: "Friends can enjoy being miserable together." Return ONLY a JSON array of 4 strings. No explanation. No markdown.`;
+      usr=`${ctx?ctx+"\n":""}Node: "${n.text}".${known}\n\nWhat human truth lives inside THIS specific situation? Derive 4 options from what's described above. Return ONLY: ["...","...","...","..."]`;
+    } else if(field==="e3"){
+      sys=`You find what a story is really about — the tension or subject underneath the surface event. Not a moral lesson. A dynamic or subject: "the gap between freedom and stability", "how we perform okayness". Must come from what's described, not invented. Return ONLY a JSON array of 4 strings. No explanation. No markdown.`;
+      usr=`${ctx?ctx+"\n":""}Node: "${n.text}".${known}\n\nWhat is this really about underneath the surface? Derive 4 options from what's described. Return ONLY: ["...","...","...","..."]`;
+    } else {
+      sys=`You help a creator climb the Essence Ladder — 5 steps from surface event to simplest human expression. Suggestions must flow directly from what's already filled. Concrete and specific. Return ONLY a JSON array of 4 strings.`;
+      usr=`${ctx?ctx+"\n":""}Node: "${n.text}".${known}\n\nSuggest 4 options for: ${ESSENCE_META[field]}. Must flow from what's filled. Return a JSON array of 4 strings.`;
+    }
+    const arr=parseJSON(await callAI("sculpt",sys,usr,600)).filter(x=>typeof x==="string").slice(0,4);
+    list.innerHTML="";
+    arr.forEach(s=>{
+      const d=document.createElement("div"); d.className="sugg"; d.textContent=s;
+      d.onclick=()=>{ sculptOverlay.querySelector(`textarea[data-efield="${field}"]`).value=s; };
+      list.appendChild(d);
+    });
+  }catch(err){ list.innerHTML='<div class="footer-note" style="color:var(--danger)">'+err.message+'</div>'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+sculptOverlay.querySelectorAll("[data-esuggest]").forEach(b=>b.onclick=()=>suggestEssenceField(b.dataset.esuggest));
+sculptOverlay.querySelectorAll("[data-eclear]").forEach(b=>b.onclick=()=>{ sculptOverlay.querySelector(`[data-esugg="${b.dataset.eclear}"]`).innerHTML=""; });
+document.getElementById("scRunFilters").onclick=async ()=>{
+  const btn=document.getElementById("scRunFilters");
+  const filterSugg=document.getElementById("scFilterSugg");
+  const e5=getE("e5");
+  if(!e5){ filterSugg.innerHTML='<div class="footer-note" style="color:var(--danger)">Fill step 05 (Expression) first.</div>'; return; }
+  btn.disabled=true; const old=btn.textContent; btn.textContent="…";
+  filterSugg.innerHTML='<div class="footer-note"><span class="spinner"></span> applying filters…</div>';
+  try{
+    const sys="You apply the Three Filters to test an expression from the Essence Ladder. For each filter, give one concrete suggestion that improves or challenges the expression. Return ONLY JSON: {\"simpler\":\"...\",\"truthful\":\"...\",\"surprising\":\"...\"}";
+    const usr=`Expression (step 05): "${e5}"\nHuman truth (step 04): "${getE("e4")||"not filled"}"\n\nApply the Three Filters. Return JSON with keys: simpler, truthful, surprising.`;
+    const result=parseJSON(await callAI("sculpt",sys,usr,500));
+    filterSugg.innerHTML="";
+    const labels={simpler:"Simpler →",truthful:"More truthful →",surprising:"More surprising →"};
+    const fields={simpler:"f1",truthful:"f2",surprising:"f3"};
+    Object.entries(result).forEach(([k,v])=>{
+      if(!v) return;
+      const d=document.createElement("div"); d.className="sugg";
+      d.innerHTML=`<span style="color:var(--muted);font-size:11px;display:block;margin-bottom:2px">${labels[k]||k}</span>${v}`;
+      d.onclick=()=>{ const ta=sculptOverlay.querySelector(`textarea[data-efield="${fields[k]}"]`); if(ta) ta.value=v; };
+      filterSugg.appendChild(d);
+    });
+  }catch(err){ filterSugg.innerHTML='<div class="footer-note" style="color:var(--danger)">'+err.message+'</div>'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
+
+async function runGenerateParagraph(inputs, systemPrompt, userPrompt){
+  const wordTarget=parseInt(scWC.value)||120;
+  const btn=document.getElementById("scGenerate"); btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> generating…';
+  const pv=document.getElementById("scParaView");
+  pv.contentEditable="false";
+  pv.innerHTML='<span class="spinner"></span> sculpting paragraph…';
+  try{
+    const maxTok=Math.max(1500,Math.round(wordTarget*2.2)+1200);
+    const para=await callAI("sculpt",systemPrompt,userPrompt,maxTok,true);
+    if(!para||!para.trim()){ throw new Error("Model returned no text. Try a longer length, or switch model in the picker above."); }
+    sculptDraft.paragraph=para;
+    pv.contentEditable="false";
+    pv.innerHTML='<span class="spinner"></span> highlighting…';
+    const [highlighted, suggestedTitle] = await Promise.all([
+      highlightPara(para),
+      (async()=>{
+        try{
+          const ts=await callAI("sculpt","You generate short node titles. Given a paragraph, return ONLY a title of 3-5 words that captures its core idea. No punctuation at the end. No quotes.",`PARAGRAPH:\n${para}`,800);
+          return ts.replace(/["""'']/g,"").trim();
+        }catch{ return null; }
+      })()
+    ]);
+    pv.innerHTML=highlighted; pv.contentEditable="true";
+    sculptDraft.highlighted=highlighted; sculptDraft.title=suggestedTitle;
+    if(suggestedTitle) document.getElementById("scTitle").value=suggestedTitle;
+  }catch(err){ pv.innerHTML='<span style="color:var(--danger)">'+err.message+'</span>'; }
+  finally{ btn.disabled=false; btn.innerHTML=old; }
+}
+
+document.getElementById("scGenerate").onclick=async ()=>{
+  const type=document.getElementById("scNodeType").value;
+  const n=state.nodes[sculptId];
+  const ctx=ancestorContext(n.id);
+  const wordTarget=parseInt(scWC.value)||120;
+  if(type==="prompt"){
+    const promptText=document.getElementById("scPromptText").value.trim();
+    if(!promptText){ alert("Type a prompt first."); return; }
+    const sys=`You are a creative assistant. Follow the user's prompt exactly. Match the requested format and length. Output only the content — no preamble, no meta-commentary.`;
+    const usr=`${ctx?ctx+"\n\n":""}${promptText}`;
+    await runGenerateParagraph(null,sys,usr);
+  } else if(type==="essence"){
+    const e5=getE("e5");
+    if(!e5&&!getE("e1")){ alert("Fill at least one ladder step first."); return; }
+    const essenceOutcome=document.getElementById("scEssenceOutcome").value.trim();
+    const outputDirective=essenceOutcome||"a vivid narrative paragraph";
+    const sys=`You are a creative writing engine. Use the Essence Ladder as your raw material — moving from surface event down to its simplest human expression. Your job is to generate: ${outputDirective}.
+Generate output that embodies the expression rather than explaining it. Match the format to the request exactly.
+Target length: ~${wordTarget} words. No filler. No meta-commentary.
+When writing prose, break into natural paragraphs when total exceeds ~80 words.`;
+    const f=["e1","e2","e3","e4","e5","f1","f2","f3"];
+    const labels=["What happens","Why","Really about","Human truth","Expression","Simpler filter","Truthful filter","Surprising filter"];
+    const lines=f.map((k,i)=>getE(k)?`${labels[i]}: ${getE(k)}`:"").filter(Boolean).join("\n");
+    const usr=`${ctx?ctx+"\n\n":""}NODE: "${n.text}"\n${lines}\n\nGenerate: ${outputDirective}. Target: ~${wordTarget} words.`;
+    await runGenerateParagraph(null,sys,usr);
+  } else {
+    const d=get("desire"), r=get("resistance"), c=get("change");
+    if(!d&&!r&&!c){ alert("Fill at least one of the three fields first."); return; }
+    n.desire=d; n.resistance=r; n.change=c;
+    const outcome=document.getElementById("scOutcome").value.trim();
+    const outputDirective=outcome||"a vivid narrative paragraph";
+    const sys=`You are a creative writing engine working within a project. Your job is to generate: ${outputDirective}.
+Use the Desire, Resistance, and Change as your raw creative material — they define what happens, what opposes it, and how it resolves. Honor the project brief and tone throughout.
+Match the format to the request: if asked for an outline, write an outline; if asked for a scene, write a scene; if asked for dialogue, write dialogue; etc.
+Target length: ~${wordTarget} words. Count carefully and stop at the target. No filler.
+When writing prose, break into natural paragraphs (blank line between each) when total exceeds ~80 words.
+Output only the content — no preamble, no meta-commentary, no word count label.`;
+    const usr=`${ctx?ctx+"\n\n":""}NODE: "${n.text}"\nDESIRE: ${d||"(unspecified)"}\nRESISTANCE: ${r||"(unspecified)"}\nCHANGE: ${c||"(unspecified)"}\n\nGenerate: ${outputDirective}. Target: ~${wordTarget} words.`;
+    await runGenerateParagraph(null,sys,usr);
+  }
+};
+document.getElementById("scSave").onclick=()=>{
+  if(!sculptId) return;
+  const n=state.nodes[sculptId];
+  const type=document.getElementById("scNodeType").value;
+  n.text=document.getElementById("scTitle").value.trim()||"Untitled";
+  if(type==="essence"){
+    n.nodeType="essence";
+    n.essenceData={outcome:document.getElementById("scEssenceOutcome").value.trim()};
+    ["e1","e2","e3","e4","e5","f1","f2","f3"].forEach(f=>{ n.essenceData[f]=getE(f); });
+  } else if(type==="prompt"){
+    n.nodeType="prompt";
+    n.promptText=document.getElementById("scPromptText").value.trim();
+  } else if(type==="note"){
+    // handled by scNoteSave
+  } else {
+    if(n.nodeType==="note"||n.nodeType==="essence"||n.nodeType==="prompt") n.nodeType=undefined;
+    n.outcome=document.getElementById("scOutcome").value.trim();
+    n.desire=get("desire"); n.resistance=get("resistance"); n.change=get("change");
+  }
+  const pv2=document.getElementById("scParaView");
+  const editedHtml=pv2.innerHTML;
+  const isEmpty=!editedHtml||editedHtml.includes("Fill the")||editedHtml.includes("sculpting")||editedHtml.includes("Type your prompt");
+  if(!isEmpty){
+    const plain=editedHtml.replace(/<\/p>\s*<p>/gi,"\n\n").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g,"").trim();
+    n.paragraph=plain; n._paraHighlighted=editedHtml;
+  }
+  pushUndo(); renderNode(n.id); drawEdges(); persist(); closeSculpt();
+};
+
+/* ================= COMPILE ================= */
+const compileOverlay=document.getElementById("compileOverlay");
+let compileData={ request:"", questions:[], file:null };
+const CMP_HIST_KEY="ideasculpt.compile.hist.v1";
+const CMP_HIST_MAX=10;
+
+function loadCmpHist(){ try{ return JSON.parse(localStorage.getItem(CMP_HIST_KEY))||[]; }catch{ return []; } }
+function saveCmpHist(h){ try{ localStorage.setItem(CMP_HIST_KEY,JSON.stringify(h)); }catch{} }
+
+function renderCmpHist(){
+  const hist=loadCmpHist();
+  const sec=document.getElementById("cmpHistSection");
+  const list=document.getElementById("cmpHistList");
+  if(!hist.length){ sec.style.display="none"; return; }
+  sec.style.display="block"; list.innerHTML="";
+  hist.forEach((entry,i)=>{
+    const item=document.createElement("div"); item.className="cmp-hist-item";
+    const date=new Date(entry.savedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+    const answerCount=entry.answers?entry.answers.filter(a=>a.a&&a.a!=="(no preference)").length:0;
+    item.innerHTML=`
+      <div class="cmp-hist-req" title="${entry.request}">${entry.request}</div>
+      <div class="cmp-hist-meta">${date} · ${answerCount} answer${answerCount!==1?"s":""} saved</div>
+      <div class="cmp-hist-acts"></div>`;
+    const acts=item.querySelector(".cmp-hist-acts");
+    const loadBtn=document.createElement("button"); loadBtn.className="mini"; loadBtn.textContent="↩ load";
+    loadBtn.onclick=(e)=>{ e.stopPropagation(); loadCmpHistEntry(entry); };
+    acts.appendChild(loadBtn);
+    const editBtn=document.createElement("button"); editBtn.className="mini"; editBtn.textContent="✎ edit";
+    editBtn.onclick=(e)=>{
+      e.stopPropagation();
+      let ta=item.querySelector(".cmp-hist-edit");
+      if(ta){ ta.remove(); return; }
+      ta=document.createElement("textarea"); ta.className="cmp-hist-edit"; ta.value=entry.request;
+      ta.onclick=ev=>ev.stopPropagation();
+      ta.onblur=()=>{
+        const val=ta.value.trim(); if(!val) return;
+        const h=loadCmpHist(); h[i].request=val; saveCmpHist(h); renderCmpHist();
+      };
+      item.appendChild(ta); ta.focus();
+    };
+    acts.appendChild(editBtn);
+    const delBtn=document.createElement("button"); delBtn.className="mini danger"; delBtn.textContent="✕";
+    delBtn.onclick=(e)=>{ e.stopPropagation(); const h=loadCmpHist(); h.splice(i,1); saveCmpHist(h); renderCmpHist(); };
+    acts.appendChild(delBtn);
+    item.onclick=()=>loadCmpHistEntry(entry);
+    list.appendChild(item);
+  });
+}
+
+function loadCmpHistEntry(entry){
+  document.getElementById("cmpRequest").value=entry.request;
+  compileData.savedAnswers=entry.answers||[];
+}
+
+function saveCmpHistEntry(request, questions, answers){
+  const h=loadCmpHist();
+  const dup=h.findIndex(e=>e.request===request);
+  if(dup>=0) h.splice(dup,1);
+  h.unshift({ id:Date.now(), request, questions, answers, savedAt:Date.now() });
+  if(h.length>CMP_HIST_MAX) h.length=CMP_HIST_MAX;
+  saveCmpHist(h);
+}
+
+document.getElementById("cmpHistClear").onclick=(e)=>{ e.stopPropagation(); saveCmpHist([]); renderCmpHist(); };
+
+function selectedNodesText(){
+  const ids=[...state.sel];
+  return ids.map((id,i)=>{
+    const n=state.nodes[id];
+    let s=`### Node ${i+1}: ${n.text}`;
+    if(n.desire||n.resistance||n.change) s+=`\n(Desire: ${n.desire||"-"} | Resistance: ${n.resistance||"-"} | Change: ${n.change||"-"})`;
+    if(n.paragraph) s+=`\n${n.paragraph}`;
+    return s;
+  }).join("\n\n");
+}
+
+function showCmpStep(n){ [1,2,3].forEach(i=>document.getElementById("cmpStep"+i).style.display=i===n?"block":"none"); }
+document.getElementById("cmpCancel1").onclick=()=>compileOverlay.classList.remove("open");
+document.getElementById("cmpCancel2").onclick=()=>compileOverlay.classList.remove("open");
+document.getElementById("cmpClose").onclick=()=>compileOverlay.classList.remove("open");
+document.getElementById("cmpBack").onclick=()=>showCmpStep(1);
+document.getElementById("cmpRestart").onclick=()=>showCmpStep(1);
+document.getElementById("cmpAsk").onclick=async ()=>{
+  if(!requireKey()) return;
+  const req=document.getElementById("cmpRequest").value.trim();
+  if(!req){ alert("Describe what to compile."); return; }
+  compileData.request=req;
+  const btn=document.getElementById("cmpAsk"); btn.disabled=true; const old=btn.textContent; btn.innerHTML='<span class="spinner"></span> thinking…';
+  try{
+    const sys="You prepare to compile a creator's idea nodes into a requested deliverable, within the project's context. Generate exactly 5 short, specific clarifying questions whose answers will most improve the result (tone, format details, audience, scope, constraints). Respond ONLY with a JSON array of 5 strings.";
+    const usr=`${projectContext()}\n\nDELIVERABLE REQUESTED: ${req}\n\nIDEA NODES:\n${selectedNodesText()}\n\nReturn a JSON array of exactly 5 question strings.`;
+    const qs=parseJSON(await callAI("compile",sys,usr,500)).filter(x=>typeof x==="string").slice(0,5);
+    compileData.questions=qs;
+    const box=document.getElementById("cmpQuestions"); box.innerHTML="";
+    qs.forEach((q,i)=>{
+      const wrap=document.createElement("div"); wrap.className="q-block";
+      wrap.innerHTML=`<div class="q">${i+1}. ${q}</div>`;
+      const ta=document.createElement("input"); ta.type="text"; ta.dataset.qi=i; ta.placeholder="Your answer (optional)…";
+      const saved=compileData.savedAnswers&&compileData.savedAnswers[i];
+      if(saved&&saved.a&&saved.a!=="(no preference)") ta.value=saved.a;
+      wrap.appendChild(ta); box.appendChild(wrap);
+    });
+    showCmpStep(2);
+  }catch(err){ alert("Failed to draft questions: "+err.message); }
+  finally{ btn.disabled=false; btn.innerHTML=old; }
+};
+document.getElementById("cmpBuild").onclick=async ()=>{
+  if(!requireKey()) return;
+  const answers=compileData.questions.map((q,i)=>{
+    const el=document.querySelector(`#cmpQuestions input[data-qi="${i}"]`);
+    return { q, a:(el&&el.value.trim())||"(no preference)" };
+  });
+  const btn=document.getElementById("cmpBuild"); btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> building…';
+  try{
+    const qa=answers.map(x=>`Q: ${x.q}\nA: ${x.a}`).join("\n");
+    const sys="You are a compiler that turns a creator's idea nodes into a finished deliverable, true to the project's context. Decide the best file type (html or md) from the request. If html, output a COMPLETE, polished, standalone HTML document with inline CSS. If md, output clean Markdown.\n\nRespond in this exact format — two lines then the file:\nFILETYPE: html\nFILENAME: name.ext\n---\n<full file content here>";
+    const usr=`${projectContext()}\n\nDELIVERABLE REQUESTED: ${compileData.request}\n\nCLARIFICATIONS:\n${qa}\n\nIDEA NODES (compile these, honoring their order and relationships):\n${selectedNodesText()}`;
+    const raw=await callAI("compile",sys,usr,8000,true);
+    const sepIdx=raw.indexOf("\n---\n");
+    if(sepIdx===-1) throw new Error("Unexpected compile response format.");
+    const header=raw.slice(0,sepIdx), content=raw.slice(sepIdx+5).trim();
+    const ftMatch=header.match(/FILETYPE:\s*(html|md)/i);
+    const fnMatch=header.match(/FILENAME:\s*(\S+)/i);
+    const out={ filetype:(ftMatch?ftMatch[1]:"md").toLowerCase(), filename:fnMatch?fnMatch[1]:"compiled.md", content };
+    if(!out.content) throw new Error("No content returned.");
+    out.filetype=(out.filetype==="html")?"html":"md";
+    out.filename=out.filename||("compiled."+out.filetype);
+    compileData.file=out;
+    saveCmpHistEntry(compileData.request, compileData.questions, answers);
+    document.getElementById("cmpFileTag").textContent="· "+out.filename+" ("+out.filetype.toUpperCase()+")";
+    const view=document.getElementById("cmpResultView");
+    view.textContent=out.content.length>4000?out.content.slice(0,4000)+"\n\n… (truncated preview — full file in download)":out.content;
+    showCmpStep(3);
+  }catch(err){ alert("Build failed: "+err.message); }
+  finally{ btn.disabled=false; btn.innerHTML=old; }
+};
+document.getElementById("cmpDownload").onclick=()=>{
+  const f=compileData.file; if(!f) return;
+  const mime=f.filetype==="html"?"text/html":"text/markdown";
+  const blob=new Blob([f.content],{type:mime});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=f.filename; a.click();
+};
+document.getElementById("cmpPreview").onclick=()=>{
+  const f=compileData.file; if(!f) return;
+  const mime=f.filetype==="html"?"text/html":"text/plain";
+  const url=URL.createObjectURL(new Blob([f.content],{type:mime}));
+  window.open(url,"_blank");
+};
+
+/* ---------- settings ---------- */
+const settingsOverlay=document.getElementById("settingsOverlay");
+let settingsActiveProvider="claude";
+
+function switchProviderTab(provider){
+  settingsActiveProvider=provider;
+  document.querySelectorAll(".provider-tab").forEach(t=>t.classList.toggle("active",t.dataset.provider===provider));
+  ["claude","openai","gemini"].forEach(p=>{
+    const el=document.getElementById("panel-"+p);
+    if(el) el.style.display=p===provider?"block":"none";
+  });
+}
+
+function openSettings(){
+  settingsActiveProvider=cfg.provider||"claude";
+  document.getElementById("claudeKey").value=cfg.claudeKey||cfg.apiKey||"";
+  document.getElementById("claudeModel").value=cfg.claudeModel||cfg.model||"claude-sonnet-4-6";
+  document.getElementById("openaiKey").value=cfg.openaiKey||"";
+  document.getElementById("openaiModel").value=cfg.openaiModel||"gpt-4.1";
+  document.getElementById("geminiKey").value=cfg.geminiKey||"";
+  document.getElementById("geminiModel").value=cfg.geminiModel||"gemini-3.5-flash";
+  switchProviderTab(settingsActiveProvider);
+  settingsOverlay.classList.add("open");
+}
+
+document.querySelectorAll(".provider-tab").forEach(t=>t.onclick=()=>switchProviderTab(t.dataset.provider));
+document.getElementById("settingsBtn").onclick=openSettings;
+document.getElementById("homeSettingsBtn").onclick=openSettings;
+document.getElementById("settingsClose").onclick=()=>settingsOverlay.classList.remove("open");
+document.getElementById("settingsSave").onclick=()=>{
+  cfg.provider=settingsActiveProvider;
+  cfg.claudeKey=document.getElementById("claudeKey").value.trim();
+  cfg.claudeModel=document.getElementById("claudeModel").value;
+  cfg.openaiKey=document.getElementById("openaiKey").value.trim();
+  cfg.openaiModel=document.getElementById("openaiModel").value;
+  cfg.geminiKey=document.getElementById("geminiKey").value.trim();
+  cfg.geminiModel=document.getElementById("geminiModel").value;
+  // backward compat
+  cfg.apiKey=cfg.claudeKey;
+  cfg.model=cfg.claudeModel;
+  saveCfg(cfg);
+  settingsOverlay.classList.remove("open");
+};
+document.querySelectorAll(".overlay").forEach(o=>{ if(o.id==="sculptOverlay") return; o.addEventListener("mousedown",(e)=>{ if(e.target===o) o.classList.remove("open"); }); });
+
+/* ================= PROJECTS / HOME ================= */
+const projOverlay=document.getElementById("projOverlay");
+function openHome(){
+  state.sel.clear(); state.primary=null;
+  renderHome(); home.classList.add("open");
+}
+function renderHome(){
+  const grid=document.getElementById("projectGrid"); grid.innerHTML="";
+  const list=Object.values(store.projects).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const newCard=document.createElement("div");
+  newCard.className="proj-card new";
+  newCard.innerHTML='<div class="plus">+</div><div>New project</div>';
+  newCard.onclick=()=>openNewProject();
+  grid.appendChild(newCard);
+  list.forEach(p=>{
+    const nodeCount=p.map&&p.map.nodes?Object.keys(p.map.nodes).length:0;
+    const card=document.createElement("div"); card.className="proj-card";
+    const h=document.createElement("h3"); h.textContent=p.name||"Untitled";
+    const brief=document.createElement("div"); brief.className="brief"; brief.textContent=p.brief||"No brief yet.";
+    const meta=document.createElement("div"); meta.className="meta";
+    const count=document.createElement("span"); count.textContent=nodeCount+" node"+(nodeCount===1?"":"s");
+    const acts=document.createElement("div"); acts.className="acts";
+    const rn=document.createElement("button"); rn.className="mini"; rn.textContent="rename";
+    rn.onclick=(e)=>{ e.stopPropagation(); openEditProject(p.id); };
+    const del=document.createElement("button"); del.className="mini danger"; del.textContent="delete";
+    del.onclick=(e)=>{ e.stopPropagation(); if(confirm('Delete project "'+(p.name||"Untitled")+'"? This cannot be undone.')){ delete store.projects[p.id]; if(store.current===p.id) store.current=null; saveStore(); renderHome(); } };
+    acts.appendChild(rn); acts.appendChild(del);
+    meta.appendChild(count); meta.appendChild(acts);
+    card.appendChild(h); card.appendChild(brief); card.appendChild(meta);
+    card.onclick=()=>openProject(p.id);
+    grid.appendChild(card);
+  });
+}
+let editingProjectId=null;
+function openNewProject(){
+  editingProjectId=null;
+  document.getElementById("projModalTitle").textContent="New project";
+  document.getElementById("projCreate").textContent="Create project";
+  document.getElementById("projNameInput").value="";
+  document.getElementById("projBriefInput").value="";
+  projOverlay.classList.add("open");
+  setTimeout(()=>document.getElementById("projNameInput").focus(),0);
+}
+function openEditProject(id){
+  editingProjectId=id; const p=store.projects[id];
+  document.getElementById("projModalTitle").textContent="Edit project";
+  document.getElementById("projCreate").textContent="Save";
+  document.getElementById("projNameInput").value=p.name||"";
+  document.getElementById("projBriefInput").value=p.brief||"";
+  projOverlay.classList.add("open");
+}
+document.getElementById("projCancel").onclick=()=>projOverlay.classList.remove("open");
+document.getElementById("projCreate").onclick=()=>{
+  const name=document.getElementById("projNameInput").value.trim()||"Untitled";
+  const brief=document.getElementById("projBriefInput").value.trim();
+  if(editingProjectId){
+    const p=store.projects[editingProjectId]; p.name=name; p.brief=brief; saveStore();
+    projOverlay.classList.remove("open"); renderHome();
+    if(store.current===editingProjectId) document.getElementById("projName").textContent=name;
+    return;
+  }
+  const id=pid();
+  store.projects[id]={ id, name, brief, createdAt:Date.now(), map:{ nodes:{}, edges:[], seq:1, view:{x:0,y:0,scale:1} } };
+  saveStore();
+  projOverlay.classList.remove("open");
+  openProject(id, true);
+};
+function openProject(id, fresh){
+  store.current=id; saveStore();
+  const p=store.projects[id];
+  loadMap(p.map||{});
+  document.getElementById("projName").textContent=p.name||"Untitled";
+  home.classList.remove("open");
+  if(fresh && Object.keys(state.nodes).length===0){
+    const pos=screenToWorld(window.innerWidth/2,window.innerHeight/2);
+    createNode({text:p.name||"Central idea", x:pos.x-55, y:pos.y-20, root:true});
+  }
+}
+
+/* ---------- map persistence ---------- */
+let persistTimer=null;
+function persist(){
+  clearTimeout(persistTimer);
+  persistTimer=setTimeout(()=>{
+    const p=currentProject(); if(!p) return;
+    p.map={ nodes:state.nodes, edges:state.edges, seq:state.seq, view:state.view };
+    saveStore();
+  },200);
+}
+function loadMap(d){
+  undoStack=[]; redoStack=[]; refreshUndoUI();
+  world.innerHTML=""; state.nodes=d.nodes||{}; state.edges=d.edges||[];
+  for(const id in state.nodes){ const n=state.nodes[id]; if(n.desire==null)n.desire=""; if(n.resistance==null)n.resistance=""; if(n.change==null)n.change=""; if(n.paragraph==null)n.paragraph=""; if(n.outcome==null)n.outcome=""; }
+  state.seq=d.seq||(Object.keys(state.nodes).length+1);
+  state.view=d.view||{x:0,y:0,scale:1};
+  state.sel.clear(); state.primary=null;
+  for(const id in state.nodes) renderNode(id);
+  applyView(); drawEdges(); refreshSelUI();
+}
+
+/* ================= CONTEXT PANEL ================= */
+const CTX_KEY="ideasculpt.ctx.v1";
+let ctxStore={ files:[], mode:"off", truncateWords:8000, scope:"all" };
+
+function loadCtx(){
+  try{ const s=JSON.parse(localStorage.getItem(CTX_KEY)); if(s) ctxStore=Object.assign(ctxStore,s); }catch{}
+}
+function saveCtx(){ try{ localStorage.setItem(CTX_KEY,JSON.stringify(ctxStore)); }catch{} }
+function estTokens(text){ return Math.round((text||"").split(/\s+/).length*1.3); }
+
+function fileEffectiveMode(f){
+  if(f.fileMode && f.fileMode!=="inherit") return f.fileMode;
+  return ctxStore.mode;
+}
+function getContextBlock(isGeneration){
+  if(ctxStore.mode==="off") return "";
+  if(ctxStore.scope==="generation" && !isGeneration) return "";
+  const active=ctxStore.files.filter(f=>f.enabled && fileEffectiveMode(f)!=="off");
+  if(!active.length) return "";
+  const parts=active.map(f=>{
+    const words=(f.text||"").split(/\s+/);
+    const total=words.length;
+    const fmode=fileEffectiveMode(f);
+    let sliced, rangeDesc;
+    if(fmode==="truncate"){
+      sliced=words.slice(0,ctxStore.truncateWords);
+      rangeDesc=`words 1–${Math.min(ctxStore.truncateWords,total)} of ${total}`;
+    } else {
+      const s=Math.round((f.rangeStart||0)*total);
+      const e=Math.round((f.rangeEnd!=null?f.rangeEnd:1)*total);
+      sliced=words.slice(s,e);
+      rangeDesc=`words ${s+1}–${Math.min(e,total)} of ${total}`;
+    }
+    const text=sliced.join(" ")+(sliced.length<total?"…":"");
+    const instruction=f.instruction ? `Instruction: ${f.instruction}` : "Use for tone, style, and voice reference.";
+    return `--- FILE: ${f.name} [${rangeDesc}] ---\n${instruction}\n${text}`;
+  });
+  return "\n\nREFERENCE MATERIAL:\n"+parts.join("\n\n");
+}
+
+/* --- PDF extraction via pdf.js CDN --- */
+async function extractPdf(file){
+  if(!window.pdfjsLib){
+    await new Promise((res,rej)=>{
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      s.onload=res; s.onerror=rej; document.head.appendChild(s);
+    });
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  const buf=await file.arrayBuffer();
+  const pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+  let out="";
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i);
+    const tc=await page.getTextContent();
+    out+=tc.items.map(x=>x.str).join(" ")+"\n";
+  }
+  return out.trim();
+}
+
+async function extractFile(file){
+  if(file.name.endsWith(".pdf")) return extractPdf(file);
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsText(file); });
+}
+
+/* --- render panel --- */
+function renderCtxPanel(){
+  document.querySelectorAll(".mode-btn").forEach(b=>{
+    b.classList.toggle("active",b.dataset.mode===ctxStore.mode);
+    b.classList.toggle("off",b.dataset.mode==="off"&&ctxStore.mode==="off");
+  });
+  document.getElementById("truncateRow").style.display=ctxStore.mode==="truncate"?"block":"none";
+  document.getElementById("truncateSlider").value=ctxStore.truncateWords;
+  document.getElementById("truncateVal").textContent=ctxStore.truncateWords.toLocaleString();
+  document.getElementById("ctxScope").value=ctxStore.scope;
+
+  const list=document.getElementById("ctxFileList"); list.innerHTML="";
+  ctxStore.files.forEach((f,i)=>{
+    const tok=estTokens(f.text);
+    const fm=f.fileMode||"inherit";
+    const row=document.createElement("div"); row.className="ctx-file";
+
+    const head=document.createElement("div"); head.style.cssText="display:flex;align-items:flex-start;gap:10px";
+    head.innerHTML=`
+      <div class="cf-info" style="flex:1;min-width:0">
+        <div class="cf-name" title="${f.name}">${f.name}</div>
+        <div class="cf-meta">${tok.toLocaleString()} tokens · ${(f.text||"").split(/\s+/).length.toLocaleString()} words</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <label class="toggle-sw" title="Enable/disable"><input type="checkbox" ${f.enabled?"checked":""} class="ctx-toggle" data-idx="${i}"/><span class="sw"></span></label>
+        <button class="mini danger ctx-del" data-idx="${i}">✕</button>
+      </div>`;
+    row.appendChild(head);
+
+    const modeRow=document.createElement("div"); modeRow.className="cf-file-mode";
+    [["inherit","Global"],["full","Full"],["truncate","Trunc"],["off","Off"]].forEach(([val,label])=>{
+      const b=document.createElement("div"); b.className="cf-mode-btn"+(fm===val?" active":"")+(val==="off"&&fm==="off"?" off-mode":"");
+      b.textContent=label; b.dataset.idx=i; b.dataset.fmode=val;
+      b.onclick=()=>{ ctxStore.files[i].fileMode=val; saveCtx(); renderCtxPanel(); };
+      modeRow.appendChild(b);
+    });
+    row.appendChild(modeRow);
+
+    const wordCount=(f.text||"").split(/\s+/).length;
+    const rs=f.rangeStart||0, re=f.rangeEnd!=null?f.rangeEnd:1;
+    const startWord=Math.round(rs*wordCount)||1, endWord=Math.round(re*wordCount)||wordCount;
+
+    const rangeWrap=document.createElement("div");
+    if(fm==="truncate"){ rangeWrap.style.display="none"; }
+    rangeWrap.innerHTML=`
+      <div style="font-size:10px;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-bottom:4px">WORD RANGE</div>
+      <div class="range-wrap">
+        <div class="range-track"></div>
+        <div class="range-fill" data-fill="${i}"></div>
+        <input type="range" class="cf-range-start" data-idx="${i}" min="0" max="1000" value="${Math.round(rs*1000)}" step="1" />
+        <input type="range" class="cf-range-end" data-idx="${i}" min="0" max="1000" value="${Math.round(re*1000)}" step="1" />
+      </div>
+      <div class="range-labels">
+        <span data-label-start="${i}">word ${startWord}</span>
+        <span style="color:var(--muted)">of ${wordCount.toLocaleString()}</span>
+        <span data-label-end="${i}">word ${endWord}</span>
+      </div>`;
+    row.appendChild(rangeWrap);
+
+    const ta=document.createElement("textarea"); ta.className="cf-instruction";
+    ta.placeholder='How to use this file — e.g. "use for story structure only, not tone"';
+    ta.value=f.instruction||"";
+    ta.oninput=()=>{ ctxStore.files[i].instruction=ta.value; saveCtx(); };
+    row.appendChild(ta);
+
+    list.appendChild(row);
+  });
+
+  list.querySelectorAll(".ctx-toggle").forEach(cb=>{
+    cb.onchange=()=>{ ctxStore.files[+cb.dataset.idx].enabled=cb.checked; saveCtx(); updateTokBar(); updateIndicator(); };
+  });
+  list.querySelectorAll(".ctx-del").forEach(b=>{
+    b.onclick=()=>{ ctxStore.files.splice(+b.dataset.idx,1); saveCtx(); renderCtxPanel(); };
+  });
+
+  function updateRangeUI(i){
+    const startEl=list.querySelector(`.cf-range-start[data-idx="${i}"]`);
+    const endEl=list.querySelector(`.cf-range-end[data-idx="${i}"]`);
+    const fill=list.querySelector(`[data-fill="${i}"]`);
+    const labelS=list.querySelector(`[data-label-start="${i}"]`);
+    const labelE=list.querySelector(`[data-label-end="${i}"]`);
+    if(!startEl||!endEl) return;
+    let sv=+startEl.value, ev=+endEl.value;
+    if(sv>ev-10){ if(startEl===document.activeElement) sv=ev-10; else ev=sv+10; startEl.value=sv; endEl.value=ev; }
+    const sp=sv/1000, ep=ev/1000;
+    fill.style.left=(sp*100)+"%"; fill.style.right=((1-ep)*100)+"%";
+    const wc=(ctxStore.files[i].text||"").split(/\s+/).length;
+    if(labelS) labelS.textContent="word "+(Math.round(sp*wc)||1);
+    if(labelE) labelE.textContent="word "+(Math.round(ep*wc)||wc);
+    ctxStore.files[i].rangeStart=sp; ctxStore.files[i].rangeEnd=ep;
+    saveCtx(); updateTokBar();
+  }
+  list.querySelectorAll(".cf-range-start,.cf-range-end").forEach(inp=>{
+    inp.addEventListener("input",()=>updateRangeUI(+inp.dataset.idx));
+    updateRangeUI(+inp.dataset.idx);
+  });
+
+  updateTokBar(); updateIndicator();
+}
+
+function updateTokBar(){
+  const enabled=ctxStore.files.filter(f=>f.enabled && fileEffectiveMode(f)!=="off");
+  let toks=0;
+  enabled.forEach(f=>{
+    const words=(f.text||"").split(/\s+/);
+    const total=words.length;
+    const fmode=fileEffectiveMode(f);
+    let sliced;
+    if(fmode==="truncate"){
+      sliced=words.slice(0,ctxStore.truncateWords);
+    } else {
+      const s=Math.round((f.rangeStart||0)*total);
+      const e=Math.round((f.rangeEnd!=null?f.rangeEnd:1)*total);
+      sliced=words.slice(s,e);
+    }
+    toks+=estTokens(sliced.join(" "));
+  });
+  const MAX=200000, pct=Math.min(100,toks/MAX*100);
+  document.getElementById("tokCount").textContent=toks.toLocaleString();
+  const bar=document.getElementById("tokBar");
+  bar.style.width=pct+"%";
+  bar.className="tok-bar"+(pct>70?" warn":"");
+}
+
+function updateIndicator(){
+  const ind=document.getElementById("ctxIndicator");
+  const active=ctxStore.mode!=="off"&&ctxStore.files.some(f=>f.enabled&&fileEffectiveMode(f)!=="off");
+  ind.textContent=active?ctxStore.mode.toUpperCase():"OFF";
+  ind.className="ctx-indicator "+(active?"on":"off");
+}
+
+/* --- panel open/close --- */
+const ctxPanel=document.getElementById("ctxPanel");
+document.getElementById("ctxBtn").onclick=()=>{ ctxPanel.classList.add("open"); renderCtxPanel(); };
+document.getElementById("ctxClose").onclick=()=>ctxPanel.classList.remove("open");
+
+/* --- mode buttons --- */
+document.querySelectorAll(".mode-btn").forEach(b=>{
+  b.onclick=()=>{ ctxStore.mode=b.dataset.mode; saveCtx(); renderCtxPanel(); };
+});
+
+/* --- truncate slider --- */
+document.getElementById("truncateSlider").oninput=function(){
+  ctxStore.truncateWords=+this.value;
+  document.getElementById("truncateVal").textContent=(+this.value).toLocaleString();
+  saveCtx(); updateTokBar();
+};
+
+/* --- scope --- */
+document.getElementById("ctxScope").onchange=function(){ ctxStore.scope=this.value; saveCtx(); };
+
+/* --- upload --- */
+const ctxFileInput=document.getElementById("ctxFileInput");
+document.getElementById("ctxUploadZone").onclick=()=>ctxFileInput.click();
+document.getElementById("ctxUploadZone").addEventListener("dragover",e=>{ e.preventDefault(); e.currentTarget.style.borderColor="var(--accent)"; });
+document.getElementById("ctxUploadZone").addEventListener("dragleave",e=>{ e.currentTarget.style.borderColor=""; });
+document.getElementById("ctxUploadZone").addEventListener("drop",e=>{ e.preventDefault(); e.currentTarget.style.borderColor=""; handleCtxFiles(e.dataTransfer.files); });
+ctxFileInput.onchange=e=>{ handleCtxFiles(e.target.files); e.target.value=""; };
+
+async function handleCtxFiles(fileList){
+  const zone=document.getElementById("ctxUploadZone");
+  zone.textContent="Reading…";
+  for(const file of fileList){
+    try{
+      const text=await extractFile(file);
+      const existing=ctxStore.files.findIndex(f=>f.name===file.name);
+      const entry={ name:file.name, text, enabled:true, addedAt:Date.now() };
+      if(existing>=0) ctxStore.files[existing]=entry;
+      else ctxStore.files.push(entry);
+    }catch(err){ alert("Could not read "+file.name+": "+err.message); }
+  }
+  saveCtx(); renderCtxPanel();
+  zone.innerHTML='<div style="font-size:20px;margin-bottom:6px">+</div><div>Drop files or click to upload</div><div style="font-size:11px;margin-top:4px;color:var(--muted)">PDF · TXT · MD · HTML</div>';
+}
+
+/* --- patch callClaude to inject context --- */
+const _callClaude=callClaude;
+callClaude=async function(system,user,maxTokens,isGeneration=false){
+  const ctx=getContextBlock(isGeneration);
+  return _callClaude(ctx?system+ctx:system,user,maxTokens);
+};
+
+/* flag generation calls */
+document.addEventListener("DOMContentLoaded",()=>{});
+
+
+/* ================= PROJECT FILES ================= */
+function getProjectFiles(){
+  const p=currentProject(); if(!p) return [];
+  if(!p.files) p.files=[];
+  return p.files;
+}
+function saveProjectFile(fileObj){
+  const p=currentProject(); if(!p) return;
+  if(!p.files) p.files=[];
+  const entry={ id:"f"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:fileObj.filename, filetype:fileObj.filetype, content:fileObj.content, createdAt:Date.now() };
+  p.files.push(entry);
+  saveStore();
+  return entry;
+}
+function deleteProjectFile(fid){
+  const p=currentProject(); if(!p||!p.files) return;
+  p.files=p.files.filter(f=>f.id!==fid);
+  saveStore();
+}
+function updateProjectFile(fid, content){
+  const p=currentProject(); if(!p||!p.files) return;
+  const f=p.files.find(f=>f.id===fid); if(!f) return;
+  f.content=content; f.updatedAt=Date.now();
+  saveStore();
+}
+
+/* --- Files panel --- */
+const filesOverlay=document.getElementById("filesOverlay");
+document.getElementById("filesBtn").onclick=()=>{ renderFilesPanel(); filesOverlay.classList.add("open"); };
+document.getElementById("filesClose").onclick=()=>filesOverlay.classList.remove("open");
+
+function fileIcon(ft){ return ft==="html"?"🌐":"📄"; }
+function renderFilesPanel(){
+  const files=getProjectFiles();
+  const empty=document.getElementById("filesEmpty");
+  const list=document.getElementById("filesList");
+  list.innerHTML="";
+  if(!files.length){ empty.style.display="block"; return; }
+  empty.style.display="none";
+  files.slice().reverse().forEach(f=>{
+    const item=document.createElement("div"); item.className="file-item";
+    const date=new Date(f.createdAt).toLocaleDateString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+    const kb=Math.round(f.content.length/1024*10)/10;
+    item.innerHTML=`
+      <div class="fi-icon">${fileIcon(f.filetype)}</div>
+      <div class="fi-info">
+        <div class="fi-name">${f.name}<span class="file-badge ${f.filetype}">${f.filetype.toUpperCase()}</span></div>
+        <div class="fi-meta">${date} · ${kb} KB</div>
+      </div>
+      <div class="fi-acts"></div>`;
+    const acts=item.querySelector(".fi-acts");
+
+    const openBtn=document.createElement("button"); openBtn.className="btn"; openBtn.style.fontSize="12px"; openBtn.textContent="↗ Open";
+    openBtn.onclick=()=>{
+      const mime=f.filetype==="html"?"text/html":"text/plain";
+      const url=URL.createObjectURL(new Blob([f.content],{type:mime}));
+      window.open(url,"_blank");
+    };
+    acts.appendChild(openBtn);
+
+    const editBtn=document.createElement("button"); editBtn.className="btn"; editBtn.style.fontSize="12px"; editBtn.textContent="✎ Edit";
+    editBtn.onclick=()=>{ openFileEdit(f.id); };
+    acts.appendChild(editBtn);
+
+    const delBtn=document.createElement("button"); delBtn.className="btn"; delBtn.style.fontSize="12px"; delBtn.style.color="var(--danger)"; delBtn.textContent="🗑";
+    delBtn.onclick=()=>{
+      if(confirm(`Delete "${f.name}"? This cannot be undone.`)){ deleteProjectFile(f.id); renderFilesPanel(); }
+    };
+    acts.appendChild(delBtn);
+
+    list.appendChild(item);
+  });
+}
+
+/* --- Edit file modal --- */
+const fileEditOverlay=document.getElementById("fileEditOverlay");
+let fileEditId=null;
+function openFileEdit(fid){
+  fileEditId=fid;
+  const files=getProjectFiles();
+  const f=files.find(x=>x.id===fid); if(!f) return;
+  document.getElementById("fileEditTitle").textContent="✎ Edit: "+f.name;
+  document.getElementById("fileEditSub").textContent="Describe what to add or change. Claude will return the full updated file.";
+  document.getElementById("fileEditPrompt").value="";
+  fileEditOverlay.classList.add("open");
+}
+document.getElementById("fileEditCancel").onclick=()=>{ fileEditOverlay.classList.remove("open"); fileEditId=null; };
+document.getElementById("fileEditRun").onclick=async ()=>{
+  if(!requireKey()||!fileEditId) return;
+  const files=getProjectFiles();
+  const f=files.find(x=>x.id===fileEditId); if(!f) return;
+  const prompt=document.getElementById("fileEditPrompt").value.trim();
+  if(!prompt){ alert("Describe what to change."); return; }
+  const btn=document.getElementById("fileEditRun"); btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> editing…';
+  try{
+    const sys=`You are editing an existing ${f.filetype.toUpperCase()} file. Apply the requested changes and return the COMPLETE updated file content. Preserve everything not mentioned in the edit request.\n\nRespond in this exact format:\nFILETYPE: ${f.filetype}\nFILENAME: ${f.name}\n---\n<full updated file content>`;
+    const usr=`EDIT REQUEST: ${prompt}\n\nEXISTING FILE (${f.name}):\n${f.content}`;
+    const raw=await callAI("compile",sys,usr,8000,true);
+    const sepIdx=raw.indexOf("\n---\n");
+    const content=sepIdx>=0?raw.slice(sepIdx+5).trim():raw.trim();
+    if(!content) throw new Error("No content returned.");
+    updateProjectFile(fileEditId, content);
+    fileEditOverlay.classList.remove("open"); fileEditId=null;
+    renderFilesPanel();
+    alert("File updated successfully.");
+  }catch(err){ alert("Edit failed: "+err.message); }
+  finally{ btn.disabled=false; btn.innerHTML=old; }
+};
+
+/* --- Compile mode toggle --- */
+let cmpMode="new";
+document.querySelectorAll(".cmp-mode-btn").forEach(btn=>{
+  btn.onclick=()=>{
+    cmpMode=btn.dataset.cmode;
+    document.querySelectorAll(".cmp-mode-btn").forEach(b=>b.classList.toggle("active",b.dataset.cmode===cmpMode));
+    document.getElementById("cmpNewSection").style.display=cmpMode==="new"?"block":"none";
+    document.getElementById("cmpEditSection").style.display=cmpMode==="edit"?"block":"none";
+    if(cmpMode==="edit") populateCmpFileSelect();
+  };
+});
+function populateCmpFileSelect(){
+  const sel=document.getElementById("cmpFileSelect");
+  const files=getProjectFiles();
+  sel.innerHTML='<option value="">— select a file —</option>';
+  files.slice().reverse().forEach(f=>{
+    const opt=document.createElement("option"); opt.value=f.id; opt.textContent=f.name+" ("+f.filetype.toUpperCase()+")";
+    sel.appendChild(opt);
+  });
+}
+document.getElementById("compileBtn").onclick=function(){
+  if(!state.sel.size) return;
+  cmpMode="new";
+  document.querySelectorAll(".cmp-mode-btn").forEach(b=>b.classList.toggle("active",b.dataset.cmode==="new"));
+  document.getElementById("cmpNewSection").style.display="block";
+  document.getElementById("cmpEditSection").style.display="none";
+  compileData={ request:"", questions:[], file:null, savedAnswers:[] };
+  document.getElementById("cmpSubtitle").textContent=`Compiling ${state.sel.size} selected idea(s). Describe what to make — the AI will then ask 5 quick questions to shape it.`;
+  showCmpStep(1);
+  document.getElementById("cmpRequest").value="";
+  renderCmpHist();
+  const cmb=document.getElementById("compileModelBar");
+  if(cmb){cmb.innerHTML="";cmb.appendChild(buildModelPicker("compile"));}
+  compileOverlay.classList.add("open");
+};
+
+const _origCmpAsk=document.getElementById("cmpAsk").onclick;
+document.getElementById("cmpAsk").onclick=async function(){
+  if(!requireKey()) return;
+  if(cmpMode==="edit"){
+    const fid=document.getElementById("cmpFileSelect").value;
+    const editReq=document.getElementById("cmpEditRequest").value.trim();
+    if(!fid){ alert("Select a file to edit."); return; }
+    if(!editReq){ alert("Describe what to add or change."); return; }
+    compileData.editFileId=fid;
+    compileData.editRequest=editReq;
+    const btn=document.getElementById("cmpAsk"); btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> thinking…';
+    try{
+      const sys="You prepare to edit an existing file based on a creator's idea nodes and an edit request. Generate exactly 5 short, specific clarifying questions whose answers will most improve the result. Respond ONLY with a JSON array of 5 strings.";
+      const usr=`${projectContext()}\n\nEDIT REQUEST: ${editReq}\n\nIDEA NODES:\n${selectedNodesText()}\n\nReturn a JSON array of exactly 5 question strings.`;
+      const qs=parseJSON(await callAI("compile",sys,usr,500)).filter(x=>typeof x==="string").slice(0,5);
+      compileData.questions=qs;
+      const box=document.getElementById("cmpQuestions"); box.innerHTML="";
+      qs.forEach((q,i)=>{
+        const wrap=document.createElement("div"); wrap.className="q-block";
+        wrap.innerHTML=`<div class="q">${i+1}. ${q}</div>`;
+        const ta=document.createElement("input"); ta.type="text"; ta.dataset.qi=i; ta.placeholder="Your answer (optional)…";
+        wrap.appendChild(ta); box.appendChild(wrap);
+      });
+      showCmpStep(2);
+    }catch(err){ alert("Failed to draft questions: "+err.message); }
+    finally{ btn.disabled=false; btn.innerHTML=old; }
+    return;
+  }
+  _origCmpAsk.call(this);
+};
+
+
+document.getElementById("cmpBuild").onclick=async function(){
+  if(!requireKey()) return;
+  const answers=compileData.questions.map((q,i)=>{
+    const el=document.querySelector(`#cmpQuestions input[data-qi="${i}"]`);
+    return { q, a:(el&&el.value.trim())||"(no preference)" };
+  });
+  const btn=document.getElementById("cmpBuild"); btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> building…';
+  try{
+    const qa=answers.map(x=>`Q: ${x.q}\nA: ${x.a}`).join("\n");
+    let sys, usr;
+    if(cmpMode==="edit" && compileData.editFileId){
+      const files=getProjectFiles();
+      const existingFile=files.find(f=>f.id===compileData.editFileId);
+      if(!existingFile) throw new Error("File not found.");
+      sys=`You are editing an existing ${existingFile.filetype.toUpperCase()} file based on a creator's idea nodes. Apply the requested changes and return the COMPLETE updated file. If html, the file must be a full standalone HTML document with inline CSS.\n\nRespond in this exact format:\nFILETYPE: ${existingFile.filetype}\nFILENAME: ${existingFile.name}\n---\n<full updated file content>`;
+      usr=`${projectContext()}\n\nEDIT REQUEST: ${compileData.editRequest}\n\nCLARIFICATIONS:\n${qa}\n\nIDEA NODES (use these as source material for the edits):\n${selectedNodesText()}\n\nEXISTING FILE (${existingFile.name}):\n${existingFile.content}`;
+    } else {
+      sys="You are a compiler that turns a creator's idea nodes into a finished deliverable, true to the project's context. Decide the best file type (html or md) from the request. If html, output a COMPLETE, polished, standalone HTML document with inline CSS. If md, output clean Markdown.\n\nRespond in this exact format — two lines then the file:\nFILETYPE: html\nFILENAME: name.ext\n---\n<full file content here>";
+      usr=`${projectContext()}\n\nDELIVERABLE REQUESTED: ${compileData.request}\n\nCLARIFICATIONS:\n${qa}\n\nIDEA NODES (compile these, honoring their order and relationships):\n${selectedNodesText()}`;
+    }
+    const raw=await callAI("compile",sys,usr,8000,true);
+    const sepIdx=raw.indexOf("\n---\n");
+    if(sepIdx===-1) throw new Error("Unexpected compile response format.");
+    const header=raw.slice(0,sepIdx), content=raw.slice(sepIdx+5).trim();
+    const ftMatch=header.match(/FILETYPE:\s*(html|md)/i);
+    const fnMatch=header.match(/FILENAME:\s*(\S+)/i);
+    const out={ filetype:(ftMatch?ftMatch[1]:"md").toLowerCase(), filename:fnMatch?fnMatch[1]:"compiled.md", content };
+    if(!out.content) throw new Error("No content returned.");
+    out.filetype=(out.filetype==="html")?"html":"md";
+    out.filename=out.filename||("compiled."+out.filetype);
+    compileData.file=out;
+    if(cmpMode==="edit" && compileData.editFileId){
+      updateProjectFile(compileData.editFileId, out.content);
+    } else {
+      saveProjectFile(out);
+      saveCmpHistEntry(compileData.request, compileData.questions, answers);
+    }
+    document.getElementById("cmpFileTag").textContent="· "+out.filename+" ("+out.filetype.toUpperCase()+")";
+    const view=document.getElementById("cmpResultView");
+    view.textContent=out.content.length>4000?out.content.slice(0,4000)+"\n\n… (truncated preview — full file in download)":out.content;
+    showCmpStep(3);
+  }catch(err){ alert("Build failed: "+err.message); }
+  finally{ btn.disabled=false; btn.innerHTML=old; }
+};
+
+/* ================= RESEARCH VIEW ================= */
+const researchViewOverlay = document.getElementById("researchViewOverlay");
+document.getElementById("rvClose").onclick = () => researchViewOverlay.classList.remove("open");
+let rvCurrentId = null;
+document.getElementById("rvTitle").addEventListener("input", (e) => {
+  if(!rvCurrentId) return;
+  const val = e.target.value.trim() || "Untitled";
+  state.nodes[rvCurrentId].text = val;
+  renderNode(rvCurrentId); drawEdges(); persist();
+});
+
+function openResearchView(id) {
+  rvCurrentId = id;
+  const n = state.nodes[id];
+  const d = n.researchData;
+  if (!d) return;
+  document.getElementById("rvTitle").value = n.text.replace(/^🔍\s*/,"");
+  const body = document.getElementById("rvBody");
+  body.innerHTML = "";
+  if (d.sourceStrategy) {
+    const s = document.createElement("div");
+    s.innerHTML = `<div class="rv-section-title">SOURCE STRATEGY</div><div class="rv-strategy">${d.sourceStrategy}</div>`;
+    body.appendChild(s);
+  }
+  const sections = [
+    { key: "behaviors",      label: "BEHAVIORS" },
+    { key: "contradictions", label: "CONTRADICTIONS" },
+    { key: "rituals",        label: "RITUALS" },
+    { key: "fears",          label: "FEARS & PRESSURES" },
+    { key: "strangeTruths",  label: "STRANGE TRUTHS" },
+  ];
+  sections.forEach(({ key, label }) => {
+    const arr = d[key]; if (!arr || !arr.length) return;
+    const sec = document.createElement("div");
+    const titleEl = document.createElement("div"); titleEl.className = "rv-section-title"; titleEl.textContent = label;
+    const entries = document.createElement("div"); entries.className = "rv-entries";
+    arr.forEach(item => {
+      const el = document.createElement("div"); el.className = "rv-entry";
+      el.innerHTML = `${item}<span class="rv-copy-hint">COPY</span>`;
+      el.onclick = () => {
+        navigator.clipboard.writeText(item).catch(()=>{});
+        el.classList.add("copied");
+        el.querySelector(".rv-copy-hint").textContent = "COPIED ✓";
+        setTimeout(() => { el.classList.remove("copied"); el.querySelector(".rv-copy-hint").textContent = "COPY"; }, 1200);
+      };
+      entries.appendChild(el);
+    });
+    sec.appendChild(titleEl); sec.appendChild(entries);
+    body.appendChild(sec);
+  });
+  if (d.languageNotes && d.languageNotes !== "none") {
+    const ln = document.createElement("div");
+    ln.innerHTML = `<div class="rv-section-title">LANGUAGE NOTES</div><div class="rv-ln">${d.languageNotes}</div>`;
+    body.appendChild(ln);
+  }
+  researchViewOverlay.classList.add("open");
+}
+
+/* ================= RESEARCH NODE ================= */
+const researchOverlay = document.getElementById("researchOverlay");
+let researchResult = null;
+
+document.getElementById("researchBtn").onclick = () => {
+  document.getElementById("researchSubject").value = "";
+  document.getElementById("researchProgress").textContent = "";
+  const rmb=document.getElementById("researchModelBar");
+  if(rmb){rmb.innerHTML="";rmb.appendChild(buildModelPicker("research"));}
+  researchOverlay.classList.add("open");
+  setTimeout(() => document.getElementById("researchSubject").focus(), 0);
+};
+
+document.getElementById("researchClose").onclick = () => researchOverlay.classList.remove("open");
+document.getElementById("researchCancel").onclick = () => researchOverlay.classList.remove("open");
+
+document.getElementById("researchRun").onclick = async () => {
+  const subject = document.getElementById("researchSubject").value.trim();
+  if (!subject) { alert("Enter a subject to research."); return; }
+  if (!requireKey()) return;
+
+  const btn = document.getElementById("researchRun");
+  btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span> researching…';
+  const prog = document.getElementById("researchProgress");
+  prog.textContent = "Determining best sources for: " + subject + "…";
+
+  const sys = `You are a Documentary Researcher specializing in firsthand human experience. Deep-mine the given subject for authentic human behavior — not Wikipedia, not secondhand summaries.
+
+APPROACH:
+1. Adapt your source strategy to the subject — identify which communities, languages, and platforms have the richest firsthand accounts (Reddit, trade forums, military forums, oral history archives, YouTube transcripts, court records, foreign-language communities, memoirs of ordinary people)
+2. Search in all relevant languages, not just English
+3. Mine behavior first: what do people in this world actually DO — observable, specific, physical
+4. Surface the strange and specific: details so precise they could only come from reality
+
+OUTPUT: Return ONLY valid JSON with this exact structure:
+{
+  "subject": "the subject",
+  "sourceStrategy": "which communities/languages/platforms targeted and why",
+  "behaviors": ["specific observable behavior...", ...],
+  "contradictions": ["what they say vs what they actually do...", ...],
+  "rituals": ["routine or repeated behavior that defines this world...", ...],
+  "fears": ["specific unspoken anxiety...", ...],
+  "strangeTruths": ["a concrete real detail nobody would invent...", ...],
+  "languageNotes": "anything only found in non-English sources, or 'none'"
+}
+
+Each array: 8-10 entries each. Keep every entry under 20 words. Dense and specific — no padding.
+IMPORTANT: Return ONLY the raw JSON object. No markdown, no code fences, no preamble, no commentary. Just the JSON.`;
+
+  const usr = `Research subject: "${subject}"\n\nGo deep. Prioritize firsthand accounts, interviews, debates, forum posts from actual practitioners. Surface behavior, contradiction, ritual, fear, and strange truth. Be specific and concrete. Return only valid JSON.`;
+
+  try {
+    prog.textContent = "Mining firsthand sources across languages…";
+    const raw = await callAI("research", sys, usr, 6000, false);
+    prog.textContent = "Structuring findings…";
+    researchResult = parseJSON(raw);
+    researchResult.subject = researchResult.subject || subject;
+
+    // Auto-place single research node
+    const pos = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
+    const nid = createNode({ text: "🔍 " + researchResult.subject, x: pos.x - 100, y: pos.y - 60 });
+    state.nodes[nid].nodeType = "research";
+    state.nodes[nid].researchData = researchResult;
+    state.nodes[nid].paragraph = (researchResult.behaviors||[]).slice(0,3).join("\n\n");
+    renderNode(nid);
+    selectOnly(nid);
+    persist();
+    researchOverlay.classList.remove("open");
+    prog.textContent = "";
+  } catch (err) {
+    prog.textContent = "";
+    alert("Research failed: " + err.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = old;
+  }
+};
+
+/* ================= CHARACTER NODE (Pass 2) ================= */
+
+const CHAR_QUESTIONS = [
+  {phase:"IDENTITY",   q:"What is this character's name?"},
+  {phase:"IDENTITY",   q:"Sex and gender identity?"},
+  {phase:"IDENTITY",   q:"How old are they?"},
+  {phase:"IDENTITY",   q:"Race and ethnicity?"},
+  {phase:"IDENTITY",   q:"Nationality and cultural background?"},
+  {phase:"IDENTITY",   q:"Where did they grow up — city, suburb, rural, which country?"},
+  {phase:"IDENTITY",   q:"What economic class did they grow up in?"},
+  {phase:"IDENTITY",   q:"What is their current occupation?"},
+  {phase:"IDENTITY",   q:"What is their level of education — and how do they feel about it?"},
+  {phase:"PHYSICAL",   q:"How would a stranger describe their appearance in one sentence?"},
+  {phase:"PHYSICAL",   q:"What do they notice first about themselves in the mirror?"},
+  {phase:"PHYSICAL",   q:"Is there a physical trait they're self-conscious about?"},
+  {phase:"PHYSICAL",   q:"How do they move through a room — do people notice when they enter?"},
+  {phase:"PHYSICAL",   q:"What do they do with their hands when they're nervous?"},
+  {phase:"PHYSICAL",   q:"What does their voice sound like — and what does it give away about them?"},
+  {phase:"PSYCHOLOGY", q:"What does this character consciously want more than anything?"},
+  {phase:"PSYCHOLOGY", q:"What do they actually need — the thing they cannot name or admit?"},
+  {phase:"PSYCHOLOGY", q:"What is their central contradiction — who they appear to be vs. what they actually are?"},
+  {phase:"PSYCHOLOGY", q:"What wound from childhood still drives their behavior today?"},
+  {phase:"PSYCHOLOGY", q:"What lie do they believe about themselves?"},
+  {phase:"PSYCHOLOGY", q:"What lie do they believe about the world?"},
+  {phase:"PSYCHOLOGY", q:"What is their greatest fear — specific, not abstract?"},
+  {phase:"PSYCHOLOGY", q:"What would they say they would never do? And what pressure would make them do it anyway?"},
+  {phase:"PSYCHOLOGY", q:"What is their fatal flaw — the quality that will destroy them if it goes unchanged?"},
+  {phase:"PSYCHOLOGY", q:"What do they most want to be seen as by others?"},
+  {phase:"PSYCHOLOGY", q:"What are they most ashamed of?"},
+  {phase:"PSYCHOLOGY", q:"What do they secretly believe they deserve in life — more or less than they have?"},
+  {phase:"PSYCHOLOGY", q:"What decision made years ago do they still replay in their mind?"},
+  {phase:"PSYCHOLOGY", q:"What story do they tell themselves about why their life is the way it is?"},
+  {phase:"PSYCHOLOGY", q:"What emotion do they never allow themselves to feel?"},
+  {phase:"PSYCHOLOGY", q:"What do they believe love is — based on how they experienced it, not how they'd define it?"},
+  {phase:"SOCIAL",     q:"Describe their relationship with their mother in one specific behavior — not an adjective."},
+  {phase:"SOCIAL",     q:"Describe their relationship with their father in one specific behavior."},
+  {phase:"SOCIAL",     q:"Do they have siblings? What role did they play — protector, scapegoat, invisible one, the favorite?"},
+  {phase:"SOCIAL",     q:"What was their first significant love like — and what did it teach them about themselves?"},
+  {phase:"SOCIAL",     q:"Who is the person they've hurt most in their life — do they know it?"},
+  {phase:"SOCIAL",     q:"Who hurt them most — and have they admitted it to themselves?"},
+  {phase:"SOCIAL",     q:"Who do they secretly envy — and why that specific person?"},
+  {phase:"SOCIAL",     q:"Who is the one person they would do anything for?"},
+  {phase:"SOCIAL",     q:"How do they behave in a group — do they lead, follow, perform, or disappear?"},
+  {phase:"SOCIAL",     q:"What do people consistently misunderstand about them?"},
+  {phase:"SOCIAL",     q:"What do their closest friends think their flaw is — and are they right?"},
+  {phase:"SOCIAL",     q:"What do they need from other people that they would never ask for directly?"},
+  {phase:"BEHAVIOR",   q:"What do they do first thing in the morning — specifically, before talking to anyone?"},
+  {phase:"BEHAVIOR",   q:"What do they do when no one is watching?"},
+  {phase:"BEHAVIOR",   q:"What is one ritual that defines their day — something they do without thinking?"},
+  {phase:"BEHAVIOR",   q:"How do they behave under pressure — what is the first thing that changes about them?"},
+  {phase:"BEHAVIOR",   q:"What do they lie about regularly — to others, or to themselves?"},
+  {phase:"BEHAVIOR",   q:"What do they avoid — and what excuse do they use for avoiding it?"},
+  {phase:"BEHAVIOR",   q:"What do they spend money on that reveals something true about who they are?"},
+  {phase:"BEHAVIOR",   q:"What does their living space look like — one specific detail that reveals character?"},
+  {phase:"BEHAVIOR",   q:"What do they eat — and what does it say about how they take care of themselves?"},
+  {phase:"BEHAVIOR",   q:"What do they watch, read, or listen to when they need comfort?"},
+  {phase:"BEHAVIOR",   q:"What is a small specific habit almost no one knows about?"},
+  {phase:"BEHAVIOR",   q:"What do they do at 2am when they cannot sleep?"},
+  {phase:"STORY",      q:"What does this character want in this story — their stated goal?"},
+  {phase:"STORY",      q:"What do they actually need in this story — what would truly complete them?"},
+  {phase:"STORY",      q:"What is the gap between who they are and who they believe themselves to be?"},
+  {phase:"STORY",      q:"What will have to break open in them for growth to become possible?"},
+  {phase:"STORY",      q:"What event or decision triggers their story — the thing that makes the old life impossible to continue?"},
+  {phase:"STORY",      q:"Who or what is the primary force resisting their goal?"},
+  {phase:"STORY",      q:"What is the most humiliating thing that could happen to them publicly?"},
+  {phase:"STORY",      q:"What are they willing to sacrifice — and what will they refuse to give up even when they should?"},
+  {phase:"STORY",      q:"What does the world look like through their eyes — what do they notice that others miss?"},
+  {phase:"STORY",      q:"What is the last thought they have before falling asleep?"},
+];
+
+let charInterviewNodeId = null;
+
+function charGetData(id) {
+  const n = state.nodes[id];
+  if (!n.characterData) n.characterData = {answers:{}, hints:{}, currentIndex:0, profile:"", profileWords:600};
+  if (!n.characterData.hints) n.characterData.hints = {};
+  return n.characterData;
+}
+
+function openCharacterInterview(nodeId) {
+  if (!requireKey()) return;
+  charInterviewNodeId = nodeId;
+  const n = state.nodes[nodeId];
+  const data = charGetData(nodeId);
+  document.getElementById("charInterviewName").value = (n.text||"").replace(/^👤\s*/,"").replace(/\s·\s\d+q$/,"");
+  const mb = document.getElementById("charModelBar");
+  if (mb) { mb.innerHTML=""; mb.appendChild(buildModelPicker("character")); }
+  charShowTab("interview");
+  charRefreshAnswered();
+  charLoadQuestion(data.currentIndex || 0);
+  document.getElementById("charInterviewOverlay").classList.add("open");
+}
+
+function charShowTab(tab) {
+  const iv = tab==="interview";
+  document.getElementById("charInterviewPane").style.display = iv ? "flex" : "none";
+  document.getElementById("charProfilePane").style.display  = iv ? "none"  : "flex";
+  document.getElementById("charTabInterview").classList.toggle("active", iv);
+  document.getElementById("charTabProfile").classList.toggle("active", !iv);
+  if (!iv) document.getElementById("charProfileText").value = charGetData(charInterviewNodeId).profile || "";
+}
+
+async function charLoadQuestion(index) {
+  if (index < 0) index = 0;
+  if (index >= CHAR_QUESTIONS.length) index = CHAR_QUESTIONS.length - 1;
+  const data = charGetData(charInterviewNodeId);
+  data.currentIndex = index; persist();
+  const q = CHAR_QUESTIONS[index];
+  document.getElementById("charPhaseLabel").textContent = q.phase + "  ·  Q" + (index+1) + " / " + CHAR_QUESTIONS.length;
+  document.getElementById("charQText").textContent = q.q;
+  const existing = data.answers[index] || "";
+  document.getElementById("charCustomAnswer").value = existing;
+  const hintEl = document.getElementById("charHint"); if (hintEl) hintEl.value = data.hints[index] || "";
+  const suggEl = document.getElementById("charSuggCards");
+  suggEl.innerHTML = '<div class="char-sugg-loading"><span class="spinner"></span> generating suggestions…</div>';
+  try {
+    const suggs = await charGenSuggestions(index, data);
+    suggEl.innerHTML = "";
+    suggs.forEach(text => {
+      const card = document.createElement("div");
+      card.className = "char-sugg-card" + (existing===text?" selected":"");
+      card.textContent = text;
+      card.onclick = () => {
+        suggEl.querySelectorAll(".char-sugg-card").forEach(c=>c.classList.remove("selected"));
+        card.classList.add("selected");
+        document.getElementById("charCustomAnswer").value = text;
+      };
+      suggEl.appendChild(card);
+    });
+  } catch(e) {
+    const msg = e && e.message ? e.message : String(e);
+    suggEl.innerHTML = `<div class="char-sugg-loading" style="color:var(--danger);flex-direction:column;align-items:flex-start;gap:8px">
+      <span>Could not generate suggestions: ${msg}</span>
+      <button onclick="charLoadQuestion(${index})" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--danger);background:transparent;color:var(--danger);cursor:pointer">↺ Retry</button>
+    </div>`;
+  }
+  charUpdateProgress();
+}
+
+function charReroll() {
+  if (!charInterviewNodeId) return;
+  charSaveHint();
+  const data = charGetData(charInterviewNodeId);
+  charLoadQuestion(data.currentIndex);
+}
+
+function charWorldContext(nodeId) {
+  // Collect all nodes connected to the character node in either direction
+  const seen = new Set([nodeId]);
+  const connected = [];
+  state.edges.forEach(e => {
+    const otherId = e.from === nodeId ? e.to : e.to === nodeId ? e.from : null;
+    if (otherId && !seen.has(otherId) && state.nodes[otherId]) {
+      seen.add(otherId);
+      connected.push(state.nodes[otherId]);
+    }
+  });
+  // Also walk up ancestors (all connected parents recursively)
+  const queue = [...connected.map(n => n.id)];
+  while (queue.length) {
+    const nid = queue.shift();
+    state.edges.forEach(e => {
+      const otherId = e.from === nid ? e.to : e.to === nid ? e.from : null;
+      if (otherId && !seen.has(otherId) && state.nodes[otherId]) {
+        seen.add(otherId);
+        connected.push(state.nodes[otherId]);
+        queue.push(otherId);
+      }
+    });
+  }
+  if (!connected.length) return "";
+  const lines = connected.map(n => {
+    let line = n.text;
+    if (n.noteText) line += ": " + n.noteText;
+    else if (n.paragraph) line += ": " + n.paragraph.slice(0, 300);
+    else if (n.desire || n.resistance || n.change) {
+      const parts = [];
+      if (n.desire) parts.push(n.desire);
+      if (n.resistance) parts.push(n.resistance);
+      if (n.change) parts.push(n.change);
+      line += ": " + parts.join(" / ");
+    }
+    return line;
+  });
+  return lines.join("\n");
+}
+
+async function charGenSuggestions(qIndex, data) {
+  const q = CHAR_QUESTIONS[qIndex];
+  const seed = document.getElementById("charInterviewName").value.trim() || "unknown character";
+  const recent = Object.entries(data.answers).map(([i,a])=>CHAR_QUESTIONS[i]?.q+": "+a).join("\n");
+  const worldCtx = charInterviewNodeId ? charWorldContext(charInterviewNodeId) : "";
+  const hint = (document.getElementById("charHint")?.value || data.hints?.[qIndex] || "").trim();
+  const creativity = parseInt(document.getElementById("charCreativity")?.value || "3");
+  const creativityGuide = [
+    "", // 0 unused
+    "OUTPUT FORMAT: one plain declarative sentence per suggestion. NO scenes. NO narrative. NO metaphors. NO 'when X happens' framing. Just state the trait or behavior as a fact. Example: 'Makes dark jokes when nervous. Voice stays flat. Hands grip hard under the table.' Keep each suggestion under 20 words.",
+    "Write 1-2 plain sentences. State the behavior as a fact. One small concrete detail is allowed. No full scenes, no literary prose.",
+    "Write concisely with one specific detail or moment. Moderate tone — usable as a character note but grounded in a real situation.",
+    "Write with a specific scene and emotional subtext. One metaphor or layered observation allowed.",
+    "Write in vivid literary prose. Full scene, maximum specificity, emotional resonance, contradiction. Each suggestion should feel like a sentence from a great novel."
+  ][creativity];
+  const sys = `You are a psychological character interviewer using Robert McKee's Story, John Truby's Anatomy of Story, and observational screenwriting. For the interview question, give exactly 3 suggestions.
+
+WRITING STYLE — THIS OVERRIDES EVERYTHING ELSE: ${creativityGuide}
+
+RULES:
+- Ground every suggestion in this specific character AND their world context (setting, era, genre)
+- Never suggest anything that contradicts the world context
+${hint ? `- The writer has decided the core behavior is: "${hint}". Generate 3 different versions of this exact behavior. Do not drift from it.` : "- Mix: one expected, one surprising, one revealing hidden pain"}
+- Return ONLY a JSON array: ["suggestion 1","suggestion 2","suggestion 3"]
+IMPORTANT: Return ONLY the raw JSON array. No markdown, no code fences.`;
+  const worldSection = worldCtx ? `\n\nWORLD CONTEXT (from connected nodes — suggestions must fit this world):\n${worldCtx}` : "";
+  const hintSection = hint ? `\n\nWRITER'S CORE BEHAVIOR (the answer is already decided — give 3 specific vivid versions of this exact behavior): "${hint}"` : "";
+  const usr = `Character: "${seed}"${worldSection}${hintSection}\n\nQuestion: "${q.q}"${recent?"\n\nPrevious answers:\n"+recent:""}\n\nReturn only valid JSON array.`;
+  const raw = await callAI("character", sys, usr, 6000, false);
+  return parseJSON(raw);
+}
+
+function charSaveCurrentAnswer() {
+  if (!charInterviewNodeId) return;
+  const data = charGetData(charInterviewNodeId);
+  const answer = document.getElementById("charCustomAnswer").value.trim();
+  if (answer) data.answers[data.currentIndex] = answer;
+  else delete data.answers[data.currentIndex];
+  state.nodes[charInterviewNodeId].paragraph = Object.entries(data.answers).map(([i,a])=>CHAR_QUESTIONS[i]?.q+"\n→ "+a).join("\n\n");
+  persist(); charUpdateProgress(); charRefreshAnswered();
+}
+
+function charUpdateProgress() {
+  if (!charInterviewNodeId) return;
+  const data = charGetData(charInterviewNodeId);
+  const count = Object.keys(data.answers).length;
+  document.getElementById("charProgressBadge").textContent = count+" answered";
+  const n = state.nodes[charInterviewNodeId];
+  const name = document.getElementById("charInterviewName").value.trim() || "Untitled";
+  n.text = "👤 "+name+(count>0?" · "+count+"q":"");
+  renderNode(charInterviewNodeId);
+}
+
+function charRefreshAnswered() {
+  if (!charInterviewNodeId) return;
+  const data = charGetData(charInterviewNodeId);
+  const list = document.getElementById("charAnsweredList");
+  const empty = document.getElementById("charAnsweredEmpty");
+  const entries = Object.entries(data.answers);
+  list.innerHTML = "";
+  empty.style.display = entries.length===0 ? "block" : "none";
+  entries.forEach(([i,a]) => {
+    const item = document.createElement("div");
+    item.className = "char-answered-item";
+    item.innerHTML = `<div class="char-answered-phase">${CHAR_QUESTIONS[i]?.phase}</div><div class="char-answered-q-text">${CHAR_QUESTIONS[i]?.q}</div><div class="char-answered-a">${a}</div>`;
+    item.onclick = () => { charSaveCurrentAnswer(); charLoadQuestion(parseInt(i)); };
+    list.appendChild(item);
+  });
+}
+
+// Create button
+document.getElementById("characterBtn").onclick = () => {
+  document.getElementById("charCreateName").value = "";
+  document.getElementById("charCreateOverlay").classList.add("open");
+  setTimeout(()=>document.getElementById("charCreateName").focus(),0);
+};
+document.getElementById("charCreateCancel").onclick = ()=>document.getElementById("charCreateOverlay").classList.remove("open");
+document.getElementById("charCreateStart").onclick = () => {
+  if (!requireKey()) return;
+  const name = document.getElementById("charCreateName").value.trim();
+  if (!name) { alert("Enter a character name or seed."); return; }
+  const pos = screenToWorld(window.innerWidth/2, window.innerHeight/2);
+  const nid = createNode({text:"👤 "+name, x:pos.x-80, y:pos.y-40});
+  state.nodes[nid].nodeType = "character";
+  state.nodes[nid].characterData = {answers:{}, currentIndex:0, profile:"", profileWords:600};
+  renderNode(nid); selectOnly(nid); persist();
+  document.getElementById("charCreateOverlay").classList.remove("open");
+  openCharacterInterview(nid);
+};
+
+function charCloseInterview() {
+  charSaveCurrentAnswer();
+  document.getElementById("charInterviewOverlay").classList.remove("open");
+  charInterviewNodeId = null;
+}
+document.getElementById("charInterviewClose").onclick  = charCloseInterview;
+document.getElementById("charInterviewClose2").onclick = charCloseInterview;
+document.getElementById("charInterviewName").addEventListener("input", ()=>{ if(charInterviewNodeId) charUpdateProgress(); });
+document.getElementById("charTabInterview").onclick = ()=>charShowTab("interview");
+document.getElementById("charTabProfile").onclick   = ()=>{ charSaveCurrentAnswer(); charShowTab("profile"); };
+function charSaveHint(){ const h=document.getElementById("charHint"); if(!h||!charInterviewNodeId) return; const d=charGetData(charInterviewNodeId); const v=h.value.trim(); if(v) d.hints[d.currentIndex]=v; else delete d.hints[d.currentIndex]; }
+document.getElementById("charQBack").onclick = ()=>{ charSaveCurrentAnswer(); charSaveHint(); const d=charGetData(charInterviewNodeId); if(d.currentIndex>0) charLoadQuestion(d.currentIndex-1); };
+document.getElementById("charQSkip").onclick = ()=>{ charSaveHint(); const d=charGetData(charInterviewNodeId); delete d.answers[d.currentIndex]; persist(); charRefreshAnswered(); charUpdateProgress(); if(d.currentIndex<CHAR_QUESTIONS.length-1) charLoadQuestion(d.currentIndex+1); };
+document.getElementById("charQNext").onclick = ()=>{ charSaveCurrentAnswer(); charSaveHint(); const d=charGetData(charInterviewNodeId); if(d.currentIndex<CHAR_QUESTIONS.length-1) charLoadQuestion(d.currentIndex+1); };
+document.getElementById("charProfileWords").oninput = function(){ document.getElementById("charProfileWordsVal").textContent=this.value+" words"; };
+document.getElementById("charProfileGenerate").onclick = async () => {
+  if (!charInterviewNodeId) return;
+  const data = charGetData(charInterviewNodeId);
+  const entries = Object.entries(data.answers);
+  if (entries.length===0) { alert("Answer some interview questions first."); return; }
+  const btn=document.getElementById("charProfileGenerate");
+  btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> generating…';
+  const words=document.getElementById("charProfileWords").value;
+  const seed=document.getElementById("charInterviewName").value.trim();
+  const style=(document.getElementById("charProfileStyle")?.value||"").trim();
+  const qaText=entries.map(([i,a])=>"Q: "+CHAR_QUESTIONS[i]?.q+"\nA: "+a).join("\n\n");
+  const styleInstruction = style ? `\n- WRITING STYLE — follow this exactly: "${style}". Let it govern sentence length, tone, and diction throughout.` : "";
+  const sys=`You are a character document writer using Robert McKee's Story, John Truby's Anatomy of Story, and observational screenwriting. Write a psychological character profile of approximately ${words} words.\n\nRULES:\n- Write in flowing prose, not bullet points\n- Lead with the central contradiction, then expand outward\n- Weave interview answers into a coherent portrait — do not just repeat them\n- Behavior over emotion — what they do, not just what they feel\n- End with one single observable detail that captures the whole person${styleInstruction}`;
+  const usr=`Character: "${seed}"\n\nInterview:\n\n${qaText}\n\nWrite the profile (~${words} words). Plain prose only.`;
+  try {
+    const profile=await callAI("character",sys,usr,6000,true);
+    const text=profile.trim();
+    document.getElementById("charProfileText").value=text;
+    data.profile=text; state.nodes[charInterviewNodeId].paragraph=text; persist();
+  } catch(e){ alert("Profile generation failed: "+e.message); }
+  finally { btn.disabled=false; btn.innerHTML=old; }
+};
+// profile auto-saves on generate
+
+/* ---- Style Presets ---- */
+const STYLE_PRESETS_KEY = "ideasculpt.stylePresets";
+function getStylePresets(){ try{ return JSON.parse(localStorage.getItem(STYLE_PRESETS_KEY)||"[]"); }catch{ return []; } }
+function saveStylePresets(arr){ localStorage.setItem(STYLE_PRESETS_KEY, JSON.stringify(arr)); }
+function charRebuildPresetsDropdown(){
+  const sel = document.getElementById("charStylePresets"); if(!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Presets —</option>';
+  getStylePresets().forEach(p => {
+    const o = document.createElement("option"); o.value = p; o.textContent = p.length>36 ? p.slice(0,34)+"…" : p;
+    sel.appendChild(o);
+  });
+  if(cur) sel.value = cur;
+}
+function charLoadStylePreset(val){
+  if(!val) return;
+  document.getElementById("charProfileStyle").value = val;
+}
+function charSaveStylePreset(){
+  const val = (document.getElementById("charProfileStyle")?.value||"").trim();
+  if(!val){ alert("Type a style first."); return; }
+  const presets = getStylePresets();
+  if(presets.includes(val)){ alert("Already saved."); return; }
+  presets.push(val); saveStylePresets(presets); charRebuildPresetsDropdown();
+  document.getElementById("charStylePresets").value = val;
+}
+function charDeleteStylePreset(){
+  const sel = document.getElementById("charStylePresets");
+  const val = sel?.value; if(!val){ alert("Select a preset to delete."); return; }
+  const presets = getStylePresets().filter(p=>p!==val);
+  saveStylePresets(presets); charRebuildPresetsDropdown();
+}
+charRebuildPresetsDropdown();
+
+// dummy to close removed block — actual old charBuild was below, now removed
+
+/* ---------- boot ---------- */
+(function boot(){
+  loadStore();
+  loadCtx();
+  if(store.current && store.projects[store.current]){ openProject(store.current); }
+  else{ openHome(); }
+  refreshSelUI();
+  updateIndicator();
+})();
+</script>
+</body>
+</html>
