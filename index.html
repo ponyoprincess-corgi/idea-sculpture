@@ -538,6 +538,11 @@
         <label class="chat-ctx-toggle"><input type="checkbox" id="scChatCtx" checked /> include project + connected nodes as context</label>
       </div>
       <div class="chat-messages" id="scChatMessages"></div>
+      <div class="wc-row" style="margin-top:8px">
+        <label>LENGTH</label>
+        <input type="range" id="scChatWordCount" min="40" max="610" step="10" value="150" />
+        <span class="wc-val" id="scChatWordCountVal">~150 words</span>
+      </div>
       <div class="chat-input-row">
         <textarea id="scChatInput" placeholder="Message…   (Enter to send · Shift+Enter for a new line)"></textarea>
         <button class="btn ai" id="scChatSend">Send</button>
@@ -654,7 +659,7 @@
         <div class="para-result" id="scParaView" contenteditable="true" spellcheck="true" style="outline:none;cursor:text" title="Click to edit">Fill the three fields, then generate a paragraph that fuses them.</div>
         <div class="wc-row" style="margin-top:auto;padding-top:16px">
           <label>LENGTH</label>
-          <input type="range" id="scWordCount" min="40" max="700" step="20" value="120" />
+          <input type="range" id="scWordCount" min="40" max="720" step="20" value="120" />
           <span class="wc-val" id="scWordCountVal">~120 words</span>
         </div>
         <div id="sculptModelBar"></div>
@@ -1567,31 +1572,31 @@ async function _readSSE(res,onEvent){
   const last=buf.trim();
   if(last.startsWith("data:")) onEvent(last.slice(5).trim());
 }
-async function callAIChat(toolId, messages, systemPrompt, onDelta, signal){
+async function callAIChat(toolId, messages, systemPrompt, onDelta, signal, maxTokens){
   const {provider,model}=getToolModel(toolId);
   const keyMap={claude:cfg.claudeKey||cfg.apiKey,openai:cfg.openaiKey,gemini:cfg.geminiKey};
   const names={claude:"Claude",openai:"OpenAI",gemini:"Gemini"};
   if(!keyMap[provider]){alert("Add a "+names[provider]+" API key in Settings first.");document.getElementById("settingsBtn").click();throw new Error("No API key for "+provider);}
-  if(provider==="openai") return _chatOpenAI(systemPrompt,messages,model,onDelta,signal);
-  if(provider==="gemini") return _chatGemini(systemPrompt,messages,model,onDelta,signal);
-  return _chatAnthropic(systemPrompt,messages,model,onDelta,signal);
+  if(provider==="openai") return _chatOpenAI(systemPrompt,messages,model,onDelta,signal,maxTokens);
+  if(provider==="gemini") return _chatGemini(systemPrompt,messages,model,onDelta,signal,maxTokens);
+  return _chatAnthropic(systemPrompt,messages,model,onDelta,signal,maxTokens);
 }
-async function _chatAnthropic(system,messages,model,onDelta,signal){
+async function _chatAnthropic(system,messages,model,onDelta,signal,maxTokens){
   const res=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",signal,
     headers:{"content-type":"application/json","x-api-key":cfg.claudeKey||cfg.apiKey||"","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:model||cfg.claudeModel||"claude-sonnet-4-6",max_tokens:4000,system,messages,stream:true})
+    body:JSON.stringify({model:model||cfg.claudeModel||"claude-sonnet-4-6",max_tokens:maxTokens||4000,system,messages,stream:true})
   });
   if(!res.ok) throw new Error(await _apiErrMsg(res));
   let full="";
   await _readSSE(res,(d)=>{ try{const j=JSON.parse(d); if(j.type==="content_block_delta"&&j.delta?.text){full+=j.delta.text;onDelta(j.delta.text);}}catch{} });
   return full;
 }
-async function _chatOpenAI(system,messages,model,onDelta,signal){
+async function _chatOpenAI(system,messages,model,onDelta,signal,maxTokens){
   model=model||cfg.openaiModel||"gpt-5.5";
   const body={model,messages:[{role:"system",content:system},...messages],stream:true};
-  if(/^(gpt-5|o\d)/.test(model)){ body.max_completion_tokens=4000; body.reasoning_effort="low"; }
-  else { body.max_tokens=2000; }
+  if(/^(gpt-5|o\d)/.test(model)){ body.max_completion_tokens=Math.max(maxTokens||4000,1200); body.reasoning_effort="low"; }
+  else { body.max_tokens=maxTokens||2000; }
   const res=await fetch("https://api.openai.com/v1/chat/completions",{
     method:"POST",signal,
     headers:{"content-type":"application/json","authorization":"Bearer "+(cfg.openaiKey||"")},
@@ -1602,13 +1607,13 @@ async function _chatOpenAI(system,messages,model,onDelta,signal){
   await _readSSE(res,(d)=>{ if(d==="[DONE]")return; try{const j=JSON.parse(d); const t=j.choices?.[0]?.delta?.content; if(t){full+=t;onDelta(t);}}catch{} });
   return full;
 }
-async function _chatGemini(system,messages,model,onDelta,signal){
+async function _chatGemini(system,messages,model,onDelta,signal,maxTokens){
   model=model||cfg.geminiModel||"gemini-3.5-flash";
   const contents=messages.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}));
   const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${cfg.geminiKey||""}`,{
     method:"POST",signal,
     headers:{"content-type":"application/json"},
-    body:JSON.stringify({system_instruction:{parts:[{text:system}]},contents,generationConfig:{maxOutputTokens:4000}})
+    body:JSON.stringify({system_instruction:{parts:[{text:system}]},contents,generationConfig:{maxOutputTokens:maxTokens||4000}})
   });
   if(!res.ok) throw new Error(await _apiErrMsg(res));
   let full="";
@@ -1800,6 +1805,7 @@ function openSculpt(id){
   sculptOverlay.querySelectorAll("[data-esugg]").forEach(d=>d.innerHTML="");
   document.getElementById("scFilterSugg").innerHTML="";
   document.getElementById("scPromptText").value="";
+  document.getElementById("scNoteText").value="";
   setSculptType(type);
   if(type==="chat"){
     document.getElementById("scChatInput").value="";
@@ -1837,6 +1843,44 @@ function openSculpt(id){
   sculptOverlay.classList.add("open");
 }
 function closeSculpt(){ sculptOverlay.classList.remove("open"); sculptId=null; sculptDraft={}; }
+
+/* --- paste into note text preserves bullet / numbered list markers --- */
+(function(){
+  var ta=document.getElementById("scNoteText");
+  if(!ta) return;
+  function liText(li){var c=li.cloneNode(true);c.querySelectorAll("ul,ol").forEach(function(n){n.remove();});return c.textContent.replace(/\s+/g," ").trim();}
+  function walk(node,depth,lines){
+    Array.prototype.forEach.call(node.childNodes,function(ch){
+      if(ch.nodeType===3){var t=ch.textContent.replace(/\s+/g," ").trim();if(t)lines.push(t);return;}
+      if(ch.nodeType!==1)return;
+      var tag=ch.tagName.toLowerCase();
+      if(tag==="ul"||tag==="ol"){
+        var i=1;
+        Array.prototype.forEach.call(ch.children,function(li){
+          if(li.tagName.toLowerCase()!=="li")return;
+          var prefix=(tag==="ol")?(i++)+". ":"• ";
+          lines.push("  ".repeat(depth)+prefix+liText(li));
+          Array.prototype.forEach.call(li.children,function(sub){var st=sub.tagName.toLowerCase();if(st==="ul"||st==="ol")walk(sub,depth+1,lines);});
+        });
+      }else if(tag==="p"||/^h[1-6]$/.test(tag)){
+        var t=ch.textContent.replace(/\s+/g," ").trim();if(t)lines.push(t);lines.push("");
+      }else if(tag==="br"){lines.push("");}
+      else{walk(ch,depth,lines);}
+    });
+  }
+  ta.addEventListener("paste",function(e){
+    var cd=e.clipboardData||window.clipboardData;if(!cd)return;
+    var html=cd.getData("text/html");if(!html)return;
+    e.preventDefault();
+    var lines=[],root=document.createElement("div");root.innerHTML=html;
+    walk(root,0,lines);
+    var text=lines.join("\n").replace(/\n{3,}/g,"\n\n").trim();
+    var st=ta.selectionStart,en=ta.selectionEnd;
+    ta.value=ta.value.slice(0,st)+text+ta.value.slice(en);
+    var pos=st+text.length;ta.selectionStart=ta.selectionEnd=pos;
+    ta.dispatchEvent(new Event("input",{bubbles:true}));
+  });
+})();
 document.getElementById("scCancel").onclick=closeSculpt;
 document.getElementById("scNodeType").addEventListener("change",(e)=>{
   if(!sculptId) return;
@@ -1892,6 +1936,9 @@ async function sendChat(){
     const ctx=ancestorContext(n.id);
     if(ctx) system+="\n\nThe user is working inside a creative writing project. Use the following as background context when relevant (don't recite it verbatim):\n"+ctx;
   }
+  let chatMax;
+  const _cwc=document.getElementById("scChatWordCount");
+  if(_cwc){ const ci=wcInfo(_cwc); if(!ci.noLimit){ system+=`\n\nKeep your reply concise: at most about ${ci.words} words. Summarize and prioritize the most important points. Do not pad or over-explain — if a brief answer suffices, keep it brief.`; chatMax=Math.max(256,Math.round(ci.words*2.2)+200); } }
   const box=document.getElementById("scChatMessages");
   const bubble=document.createElement("div");
   bubble.className="chat-msg assistant";
@@ -1905,7 +1952,7 @@ async function sendChat(){
     const apiMsgs=n.chatMessages.map(m=>({role:m.role,content:m.content}));
     const full=await callAIChat("chat",apiMsgs,system,(delta)=>{
       acc+=delta; streamEl.textContent=acc; box.scrollTop=box.scrollHeight; status.textContent="";
-    },chatAbort.signal);
+    },chatAbort.signal,chatMax);
     const finalText=((full||acc)||"").trim();
     if(!finalText) throw new Error("Empty response — try a different model.");
     n.chatMessages.push({role:"assistant",content:finalText});
@@ -1998,8 +2045,12 @@ document.getElementById("scRandomAll").onclick=async ()=>{
 };
 
 /* slider display */
+function wcInfo(el){ if(!el) return {noLimit:false,words:120}; const v=parseInt(el.value), mx=parseInt(el.max); if(v>=mx) return {noLimit:true}; return {noLimit:false,words:v}; }
+function wcLabel(el,span){ if(!el||!span) return; const i=wcInfo(el); span.textContent=i.noLimit?"No limit":("~"+i.words+" words"); }
 const scWC=document.getElementById("scWordCount"), scWCVal=document.getElementById("scWordCountVal");
-scWC.addEventListener("input",()=>{ scWCVal.textContent="~"+scWC.value+" words"; });
+scWC.addEventListener("input",()=>wcLabel(scWC,scWCVal)); wcLabel(scWC,scWCVal);
+const scChatWC=document.getElementById("scChatWordCount"), scChatWCVal=document.getElementById("scChatWordCountVal");
+if(scChatWC){ scChatWC.addEventListener("input",()=>wcLabel(scChatWC,scChatWCVal)); wcLabel(scChatWC,scChatWCVal); }
 
 /* highlight keywords */
 async function highlightPara(para){
@@ -2099,13 +2150,13 @@ document.getElementById("scRunFilters").onclick=async ()=>{
 };
 
 async function runGenerateParagraph(inputs, systemPrompt, userPrompt){
-  const wordTarget=parseInt(scWC.value)||120;
+  const _wc=wcInfo(scWC); const wordTarget=_wc.noLimit?0:_wc.words;
   const btn=document.getElementById("scGenerate"); btn.disabled=true; const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> generating…';
   const pv=document.getElementById("scParaView");
   pv.contentEditable="false";
   pv.innerHTML='<span class="spinner"></span> sculpting paragraph…';
   try{
-    const maxTok=Math.max(1500,Math.round(wordTarget*2.2)+1200);
+    const maxTok=_wc.noLimit?4000:Math.max(1500,Math.round(wordTarget*2.2)+1200);
     const para=await callAI("sculpt",systemPrompt,userPrompt,maxTok,true);
     if(!para||!para.trim()){ throw new Error("Model returned no text. Try a longer length, or switch model in the picker above."); }
     sculptDraft.paragraph=para;
@@ -2131,7 +2182,9 @@ document.getElementById("scGenerate").onclick=async ()=>{
   const type=document.getElementById("scNodeType").value;
   const n=state.nodes[sculptId];
   const ctx=ancestorContext(n.id);
-  const wordTarget=parseInt(scWC.value)||120;
+  const _wc=wcInfo(scWC); const wordTarget=_wc.noLimit?null:_wc.words;
+  const lenSys=wordTarget?`Target length: ~${wordTarget} words. Count carefully and stop at the target. No filler.`:`Write at whatever length best serves the content.`;
+  const lenUsr=wordTarget?` Target: ~${wordTarget} words.`:``;
   if(type==="prompt"){
     const promptText=document.getElementById("scPromptText").value.trim();
     if(!promptText){ alert("Type a prompt first."); return; }
@@ -2145,12 +2198,12 @@ document.getElementById("scGenerate").onclick=async ()=>{
     const outputDirective=essenceOutcome||"a vivid narrative paragraph";
     const sys=`You are a creative writing engine. Use the Essence Ladder as your raw material — moving from surface event down to its simplest human expression. Your job is to generate: ${outputDirective}.
 Generate output that embodies the expression rather than explaining it. Match the format to the request exactly.
-Target length: ~${wordTarget} words. No filler. No meta-commentary.
+${lenSys} No meta-commentary.
 When writing prose, break into natural paragraphs when total exceeds ~80 words.`;
     const f=["e1","e2","e3","e4","e5","f1","f2","f3"];
     const labels=["What happens","Why","Really about","Human truth","Expression","Simpler filter","Truthful filter","Surprising filter"];
     const lines=f.map((k,i)=>getE(k)?`${labels[i]}: ${getE(k)}`:"").filter(Boolean).join("\n");
-    const usr=`${ctx?ctx+"\n\n":""}NODE: "${n.text}"\n${lines}\n\nGenerate: ${outputDirective}. Target: ~${wordTarget} words.`;
+    const usr=`${ctx?ctx+"\n\n":""}NODE: "${n.text}"\n${lines}\n\nGenerate: ${outputDirective}.${lenUsr}`;
     await runGenerateParagraph(null,sys,usr);
   } else {
     const d=get("desire"), r=get("resistance"), c=get("change");
@@ -2161,10 +2214,10 @@ When writing prose, break into natural paragraphs when total exceeds ~80 words.`
     const sys=`You are a creative writing engine working within a project. Your job is to generate: ${outputDirective}.
 Use the Desire, Resistance, and Change as your raw creative material — they define what happens, what opposes it, and how it resolves. Honor the project brief and tone throughout.
 Match the format to the request: if asked for an outline, write an outline; if asked for a scene, write a scene; if asked for dialogue, write dialogue; etc.
-Target length: ~${wordTarget} words. Count carefully and stop at the target. No filler.
+${lenSys}
 When writing prose, break into natural paragraphs (blank line between each) when total exceeds ~80 words.
 Output only the content — no preamble, no meta-commentary, no word count label.`;
-    const usr=`${ctx?ctx+"\n\n":""}NODE: "${n.text}"\nDESIRE: ${d||"(unspecified)"}\nRESISTANCE: ${r||"(unspecified)"}\nCHANGE: ${c||"(unspecified)"}\n\nGenerate: ${outputDirective}. Target: ~${wordTarget} words.`;
+    const usr=`${ctx?ctx+"\n\n":""}NODE: "${n.text}"\nDESIRE: ${d||"(unspecified)"}\nRESISTANCE: ${r||"(unspecified)"}\nCHANGE: ${c||"(unspecified)"}\n\nGenerate: ${outputDirective}.${lenUsr}`;
     await runGenerateParagraph(null,sys,usr);
   }
 };
