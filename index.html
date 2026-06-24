@@ -1417,14 +1417,6 @@ function ancestorContext(id,opts){
     state.edges.filter(e=>e.to===nid).forEach(e=>{ if(!seen.has(e.from)) queue.push(e.from); });
   }
 
-  // root node first if not already in ancestors
-  if(root && root.id!==id){
-    const rootInAncestors=ancestors.find(n=>n.id===root.id);
-    if(!rootInAncestors){
-      parts.push(nodeContextLine("ROOT NODE", root));
-    }
-  }
-
   // all ancestors with full context
   ancestors.forEach(n=>{
     const isRoot=root&&n.id===root.id;
