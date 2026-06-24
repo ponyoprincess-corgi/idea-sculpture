@@ -535,7 +535,8 @@
     <div id="scChatPanel" style="display:none;flex:1;min-height:0;flex-direction:column">
       <div class="chat-top">
         <div id="chatModelBar"></div>
-        <label class="chat-ctx-toggle"><input type="checkbox" id="scChatCtx" checked /> include project + connected nodes as context</label>
+        <label class="chat-ctx-toggle"><input type="checkbox" id="scCtxProject" /> include project as context</label>
+        <label class="chat-ctx-toggle"><input type="checkbox" id="scCtxNodes" checked /> include connected nodes as context</label>
       </div>
       <div class="chat-messages" id="scChatMessages"></div>
       <div class="wc-row" style="margin-top:8px">
@@ -1395,8 +1396,11 @@ function projectContext(){
   if(p.brief) s+="\nPROJECT BRIEF: "+p.brief;
   return s;
 }
-function ancestorContext(id){
-  const parts=[]; const pc=projectContext(); if(pc) parts.push(pc);
+function ancestorContext(id,opts){
+  const o=opts||{}; const wantProject=o.project!==false; const wantNodes=o.nodes!==false;
+  const parts=[];
+  if(wantProject){ const pc=projectContext(); if(pc) parts.push(pc); }
+  if(!wantNodes) return parts.join("\n");
   const root=Object.values(state.nodes).find(n=>n.root);
 
   // BFS over ALL ancestors — collect every connected parent node recursively
@@ -1932,8 +1936,10 @@ async function sendChat(){
   renderChatMessages();
   // system prompt (+ optional project/node context)
   let system="You are a helpful, knowledgeable AI assistant having a natural conversation. Be clear and useful.";
-  if(document.getElementById("scChatCtx").checked){
-    const ctx=ancestorContext(n.id);
+  const wantProject=document.getElementById("scCtxProject").checked;
+  const wantNodes=document.getElementById("scCtxNodes").checked;
+  if(wantProject||wantNodes){
+    const ctx=ancestorContext(n.id,{project:wantProject,nodes:wantNodes});
     if(ctx) system+="\n\nThe user is working inside a creative writing project. Use the following as background context when relevant (don't recite it verbatim):\n"+ctx;
   }
   let chatMax;
