@@ -147,10 +147,27 @@
   .chat-ctx-toggle input{accent-color:var(--accent);cursor:pointer}
   .chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding:8px 6px;min-height:0;
     background:var(--panel-2);border:1px solid var(--line);border-radius:12px}
-  .chat-msg{max-width:82%;padding:11px 15px;border-radius:16px;font-size:14.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+  .chat-msg{position:relative;max-width:82%;padding:11px 15px;border-radius:16px;font-size:14.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
   .chat-msg.user{align-self:flex-end;background:var(--accent);color:#0b1020;border-bottom-right-radius:4px}
   .chat-msg.assistant{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px;font-family:var(--serif)}
   .chat-msg .role-tag{display:block;font-size:9.5px;letter-spacing:.12em;opacity:.55;margin-bottom:5px;text-transform:uppercase}
+  .chat-msg .msg-del{position:absolute;top:5px;right:7px;border:none;background:transparent;color:var(--muted);font-size:13px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s;padding:2px 5px;border-radius:6px}
+  .chat-msg:hover .msg-del{opacity:.65}
+  .chat-msg .msg-del:hover{opacity:1;background:rgba(255,90,90,.18);color:#ff6b6b}
+  .chat-msg.user .msg-del{color:#11203a}
+  .node-ctx-menu{position:fixed;z-index:600;display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:5px;box-shadow:0 12px 30px rgba(0,0,0,.5);min-width:170px}
+  .node-ctx-menu.open{display:block}
+  .node-ctx-menu .ctx-item{padding:8px 12px;font-size:13px;border-radius:7px;cursor:pointer;color:var(--text)}
+  .node-ctx-menu .ctx-item:hover{background:var(--accent);color:#0b1020}
+  .lib-list{display:flex;flex-direction:column;gap:12px;margin-top:14px;max-height:60vh;overflow:auto}
+  .lib-item{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--bg)}
+  .lib-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .lib-title{font-weight:600;font-size:14px;color:var(--text)}
+  .lib-date{color:var(--muted);font-size:11px;white-space:nowrap}
+  .lib-prev{color:var(--muted);font-size:12.5px;line-height:1.5;margin-top:6px;max-height:62px;overflow:hidden;white-space:pre-wrap}
+  .lib-actions{display:flex;gap:8px;margin-top:10px}
+  .lib-toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--accent-2);color:#0b1020;font-weight:600;font-size:13px;padding:9px 16px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:700}
+  .lib-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .chat-empty{margin:auto;color:var(--muted);font-size:13px;text-align:center;max-width:360px;line-height:1.7;font-family:var(--serif)}
   .chat-input-row{display:flex;gap:10px;align-items:flex-end;margin-top:12px;flex-shrink:0}
   .chat-input-row textarea{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;color:var(--text);
@@ -412,6 +429,7 @@
     <button class="btn" id="researchBtn" style="background:linear-gradient(135deg,#c87c2a,#e8a44a);color:#0b1020;font-weight:700;border:none">🔍 Research</button>
     <button class="btn" id="characterBtn" style="background:linear-gradient(135deg,#6c5ce7,#4834d4);color:#fff;font-weight:700;border:none">👤 Character</button>
     <button class="btn" id="filesBtn">📁 Files</button>
+    <button class="btn" id="libraryBtn">📚 Library</button>
     <button class="btn" id="ctxBtn">📎 Context <span class="ctx-indicator off" id="ctxIndicator">OFF</span></button>
   </div>
 
@@ -493,6 +511,17 @@
 </div>
 
 <!-- New project modal -->
+<div id="nodeCtxMenu" class="node-ctx-menu"></div>
+<div class="overlay" id="libOverlay">
+  <div class="modal"><div class="modal-pad">
+    <div class="row spread" style="margin-top:0">
+      <h2>📚 Node Library</h2>
+      <button class="btn" id="libClose">✕</button>
+    </div>
+    <p class="sub">Saved nodes are kept here permanently, separate from any board — deleting a node on a board never removes it from the library. Right-click any node and choose “Save to Library” to add one. Saved nodes are available across all your projects.</p>
+    <div class="lib-list" id="libList"></div>
+  </div></div>
+</div>
 <div class="overlay" id="projOverlay">
   <div class="modal"><div class="modal-pad">
     <h2 id="projModalTitle">New project</h2>
@@ -1190,6 +1219,7 @@ function attachNodeEvents(el){
     else if(n.nodeType==="research"||n.nodeType==="research-data") openResearchView(id);
     else openSculpt(id);
   });
+  el.addEventListener("contextmenu",(ev)=>{ ev.preventDefault(); ev.stopPropagation(); openNodeCtxMenu(ev.clientX,ev.clientY,id); });
 
   // Paragraph hover tooltip
   const tooltip = document.getElementById("para-tooltip");
@@ -1321,6 +1351,73 @@ document.getElementById("addBtn").onclick=()=>{
   setTimeout(()=>quickEdit(document.getElementById(id),true),0);
 };
 document.getElementById("sculptBtn").onclick=()=>{ if(state.primary) openSculpt(state.primary); };
+
+/* ---------- node library (global, persists across boards/projects) ---------- */
+const LIBRARY_KEY="ideasculpt.library.v1";
+function loadLibrary(){ try{ return JSON.parse(localStorage.getItem(LIBRARY_KEY))||[]; }catch{ return []; } }
+function saveLibrary(arr){ try{ localStorage.setItem(LIBRARY_KEY,JSON.stringify(arr)); }catch{} }
+function libToast(msg){
+  let t=document.getElementById("libToast");
+  if(!t){ t=document.createElement("div"); t.id="libToast"; t.className="lib-toast"; document.body.appendChild(t); }
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),1800);
+}
+function saveNodeToLibrary(id){
+  const n=state.nodes[id]; if(!n) return;
+  const copy=JSON.parse(JSON.stringify(n));
+  delete copy.id; delete copy.x; delete copy.y; delete copy.root; delete copy._paraHighlighted;
+  const lib=loadLibrary();
+  lib.unshift({ libId:"lib"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), savedAt:Date.now(), title:(n.text||"Untitled"), node:copy });
+  saveLibrary(lib);
+  libToast("Saved to Library");
+}
+function addLibraryNodeToBoard(libId){
+  const item=loadLibrary().find(x=>x.libId===libId); if(!item) return;
+  const p=screenToWorld(window.innerWidth/2,window.innerHeight/2);
+  const nid=uid();
+  const node=JSON.parse(JSON.stringify(item.node));
+  node.id=nid; node.x=p.x-50; node.y=p.y-20; node.root=false;
+  pushUndo();
+  state.nodes[nid]=node; renderNode(nid); persist(); selectOnly(nid);
+}
+function removeLibraryItem(libId){
+  if(!confirm("Remove this saved node from your library? This can't be undone.")) return;
+  saveLibrary(loadLibrary().filter(x=>x.libId!==libId));
+  renderLibrary();
+}
+function renderLibrary(){
+  const box=document.getElementById("libList");
+  const lib=loadLibrary();
+  if(!lib.length){ box.innerHTML='<div class="chat-empty">No saved nodes yet. Right-click a node on the board → “Save to Library”.</div>'; return; }
+  box.innerHTML="";
+  lib.forEach(item=>{
+    const preview=((item.node&&(item.node.paragraph||item.node.noteText))||"").slice(0,180);
+    const d=document.createElement("div"); d.className="lib-item";
+    d.innerHTML='<div class="lib-head"><span class="lib-title"></span><span class="lib-date">'+new Date(item.savedAt).toLocaleDateString()+'</span></div>'+(preview?'<div class="lib-prev"></div>':'')+'<div class="lib-actions"><button class="btn primary lib-add">+ Add to board</button><button class="btn lib-rm">🗑 Remove</button></div>';
+    d.querySelector(".lib-title").textContent=item.title;
+    if(preview) d.querySelector(".lib-prev").textContent=preview;
+    d.querySelector(".lib-add").onclick=()=>{ addLibraryNodeToBoard(item.libId); closeLibrary(); };
+    d.querySelector(".lib-rm").onclick=()=>removeLibraryItem(item.libId);
+    box.appendChild(d);
+  });
+}
+function openLibrary(){ renderLibrary(); document.getElementById("libOverlay").classList.add("open"); }
+function closeLibrary(){ document.getElementById("libOverlay").classList.remove("open"); }
+document.getElementById("libraryBtn").onclick=openLibrary;
+document.getElementById("libClose").onclick=closeLibrary;
+document.getElementById("libOverlay").addEventListener("mousedown",(e)=>{ if(e.target.id==="libOverlay") closeLibrary(); });
+/* node right-click context menu */
+function openNodeCtxMenu(x,y,id){
+  const m=document.getElementById("nodeCtxMenu");
+  m.innerHTML="";
+  const item=document.createElement("div"); item.className="ctx-item"; item.textContent="💾 Save to Library";
+  item.onclick=()=>{ saveNodeToLibrary(id); closeNodeCtxMenu(); };
+  m.appendChild(item);
+  m.style.left=Math.min(x,window.innerWidth-190)+"px"; m.style.top=y+"px"; m.classList.add("open");
+}
+function closeNodeCtxMenu(){ const m=document.getElementById("nodeCtxMenu"); if(m) m.classList.remove("open"); }
+document.addEventListener("mousedown",(e)=>{ const m=document.getElementById("nodeCtxMenu"); if(m&&m.classList.contains("open")&&!m.contains(e.target)) closeNodeCtxMenu(); });
+window.addEventListener("blur",closeNodeCtxMenu);
 document.getElementById("deleteBtn").onclick=()=>{ pushUndo(); [...state.sel].forEach(id=>removeNode(id,true)); };
 document.getElementById("selectAllBtn").onclick=()=>{ clearSel(); Object.keys(state.nodes).forEach(id=>{state.sel.add(id);const e=document.getElementById(id);if(e)e.classList.add("selected");}); state.primary=Object.keys(state.nodes)[0]||null; refreshSelUI(); };
 document.getElementById("projectsBtn").onclick=()=>{ persist(); openHome(); };
@@ -1897,13 +1994,24 @@ function renderChatMessages(){
     return;
   }
   box.innerHTML="";
-  msgs.forEach(m=>{
+  msgs.forEach((m,i)=>{
     const d=document.createElement("div");
     d.className="chat-msg "+(m.role==="user"?"user":"assistant");
-    d.innerHTML='<span class="role-tag">'+(m.role==="user"?"You":"AI")+'</span>'+escHtml(m.content);
+    d.innerHTML='<span class="role-tag">'+(m.role==="user"?"You":"AI")+'</span>'+escHtml(m.content)+'<button class="msg-del" title="Delete this exchange and everything after it">🗑</button>';
+    d.querySelector(".msg-del").onclick=(ev)=>{ ev.stopPropagation(); deleteFromMessage(i); };
     box.appendChild(d);
   });
   box.scrollTop=box.scrollHeight;
+}
+function deleteFromMessage(i){
+  const n=sculptId&&state.nodes[sculptId];
+  if(!n||!Array.isArray(n.chatMessages)) return;
+  let start=i;
+  if(n.chatMessages[i] && n.chatMessages[i].role==="assistant" && i>0 && n.chatMessages[i-1].role==="user") start=i-1;
+  n.chatMessages=n.chatMessages.slice(0,Math.max(0,start));
+  const lastA=[...n.chatMessages].reverse().find(m=>m.role==="assistant");
+  n.paragraph=lastA?lastA.content:""; delete n._paraHighlighted;
+  renderChatMessages(); renderNode(n.id); drawEdges(); persist();
 }
 let chatAbort=null;
 function setChatSending(on){
